@@ -1,5 +1,5 @@
 from flask import Flask
-from app.pages import bp
+from app.pages.routes import bp
 
 ''' 
 The function create_app() will instantiate a Flask
