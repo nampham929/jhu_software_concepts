@@ -3,17 +3,20 @@
 {% block content %}
 <div class="container">
     <div class="bio">
-        <h1>Nam Pham</h1>
+        <!-- Bio section containing personal information and introduction -->
+        <h1>About Me:</h1>
+        <h2>Nam Pham</h2>
         <h3>Financial Management Specialist</h3>
         <p>
-        I am Nam Pham, and I am working as a Financial Management Specialist at NASA Ames Research 
-        Center in Mountain View, California. I hold a bachelor's degree in Economics with a 
+        My name is Nam Pham, and I work as a Financial Management Specialist at NASA Ames 
+        Research Center in Mountain View, California. I hold a bachelor's degree in Economics with a 
         Mathematics minor from University of California, Davis. I also hold a master's degree
         in Business Administration from California State University, Eastbay. Currently, I am 
         pursuing my second master's degree in Data Science at Johns Hopkins University.
         </p>
     </div>
     <div class="image">
+         <!-- Image section next to bio section -->
         <img src="{{ url_for('static', filename='images/profile.jpg') }}" alt="Profile Picture" width="200">
     </div>
 </div>

@@ -4,12 +4,14 @@ body {
     padding: 0;
 }
 
+/* Navbar container style */
 .navbar {
     background-color: #2cbfae;
     text-align: right;
     padding: 15px;
 }
 
+/* Navigation links style*/
 .navbar a {
     margin-left: 20px;
     text-decoration: none;
@@ -17,12 +19,14 @@ body {
     padding: 8px 12px;
 }
 
+/* Active navigation page style */
 .navbar a.active {
-    background-color: #4c00ff;
-    color: rgb(45, 132, 212);
+    background-color: #14a5f3;
+    color: rgb(17, 6, 39);
     border-radius: 4px;
 }
 
+/* Page Content area style */
 .content {
     padding: 20px;
 }
@@ -32,4 +36,34 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 20px;
+}
+
+/* Home Page Bio Section style */
+body.home .bio p {
+    max-width: 1100px;
+    text-align: justify;
+    line-height: 1.6;
+}
+
+body.home .bio h3 {
+    font-style: italic;
+    color: #2530c2;
+}
+
+/* Projects Page style */
+body.projects .content h2 {
+    color: #1E90FF; /* Make module titles blue */
+}
+
+body.projects .content p {
+    font-style: italic; /* Make paragraph descriptions italic */
+}
+
+/* Contact Page style */
+body.contact .content h1 {
+    color: #1E90FF;
+}
+
+body.contact .content p {
+    font-style: italic;
 }

@@ -1,19 +1,51 @@
+<!-- Declare HTML5 document type -->
 <!DOCTYPE html>
+
+<!-- Set the document language to English -->
 <html lang="en">
+
+
 <head>
+    <!-- Define character encoding to support special characters -->
     <meta charset="UTF-8">
+
+    <!-- Set page title dinamically -->
     <title>{{ title }}</title>
+
+    <!-- Link the main CSS file  -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
-<body>
+
+<body class="{{ active_page }}">
+
+    <!-- Navigation bar -->
     <nav class="navbar">
-        <a href="{{ url_for('pages.home') }}" class="{% if active_page=='home' %}active{% endif %}">Home</a>
-        <a href="{{ url_for('pages.projects') }}" class="{% if active_page=='projects' %}active{% endif %}">Projects</a>
-        <a href="{{ url_for('pages.contact') }}" class="{% if active_page=='contact' %}active{% endif %}">Contact</a>
+
+        <!-- Home navigation link -->
+        <a href="{{ url_for('pages.home') }}"
+           class="{% if active_page=='home' %}active{% endif %}">
+           Home
+        </a>
+
+        <!-- Projects navigation link -->
+        <a href="{{ url_for('pages.projects') }}"
+           class="{% if active_page=='projects' %}active{% endif %}">
+           Projects
+        </a>
+
+        <!-- Contact navigation link -->
+        <a href="{{ url_for('pages.contact') }}"
+           class="{% if active_page=='contact' %}active{% endif %}">
+           Contact
+        </a>
+
     </nav>
 
+    <!-- Main content area. Child templates can be inserted here -->
     <div class="content">
-        {% block content %}{% endblock %}
+        {% block content %}
+        {% endblock %}
     </div>
+
 </body>
 </html>

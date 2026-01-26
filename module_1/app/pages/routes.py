@@ -1,11 +1,7 @@
 from flask import Blueprint, render_template
 
 # Instantiate blueprint object
-bp = Blueprint(
-    "pages",
-    __name__,
-    template_folder="templates"
-)
+bp = Blueprint("pages", __name__, template_folder="templates")
 
 
 # Render Home page
