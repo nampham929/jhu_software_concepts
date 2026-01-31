@@ -1,148 +1,162 @@
-import json
-import re
-from urllib.request import urlopen, Request
-from urllib.error import HTTPError, URLError
+# scrape.py
+from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
+import re
+import json
 
-BASE_URL = "https://www.thegradcafe.com/survey/?page={page}"
-RAW_OUTPUT_FILE = "raw_applicant_data.json"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; GradCafeScraper/1.0)"
-}
+BASE_URL = "https://www.thegradcafe.com/survey/"
 
-
-def _fetch(url):
-    """Fetch a URL using urllib and return decoded HTML or None."""
+def fetch_html(url):
+    """Fetch HTML content from a URL using urllib."""
     req = Request(url, headers=HEADERS)
-    try:
-        with urlopen(req) as resp:
-            return resp.read().decode("utf-8", errors="ignore")
-    except (HTTPError, URLError):
-        return None
+    with urlopen(req) as resp:
+        return resp.read().decode("utf-8")
 
 
-def _extract(pattern, text):
-    """Extract a single regex group from text."""
-    m = re.search(pattern, text, flags=re.IGNORECASE)
-    return m.group(1) if m else None
+def parse_results(html):
+    soup = BeautifulSoup(html, "html.parser")
 
+    tbody = soup.find("tbody")
+    if not tbody:
+        return []
 
-def _parse_row(tr):
-    """Parse a single GradCafe table row."""
-    tds = tr.find_all("td")
-    if len(tds) < 5:
-        return None
+    rows = tbody.find_all("tr", recursive=False)
+    results = []
 
-    col0 = tds[0]
-    program_raw = col0.get_text(strip=True)
-    link_tag = col0.find("a")
-    url = link_tag["href"] if link_tag and link_tag.has_attr("href") else None
+    i = 0
+    while i < len(rows):
+        row = rows[i]
 
-    decision_text = tds[1].get_text(strip=True)
-    date_added = tds[2].get_text(strip=True)
-    status_text = tds[3].get_text(strip=True)
-    comments = tds[4].get_text(" ", strip=True)
-
-    gre = _extract(r"\bGRE[: ]+(\d+)", comments)
-    gre_v = _extract(r"\bV[: ]+(\d+)", comments)
-    gre_aw = _extract(r"\bAW[: ]+([\d.]+)", comments)
-    gpa = _extract(r"\bGPA[: ]+([\d.]+)", comments)
-
-    lower_all = (comments + " " + status_text).lower()
-    international_status = None
-    if "international" in lower_all:
-        international_status = "International"
-    elif "american" in lower_all or "domestic" in lower_all:
-        international_status = "American"
-
-    degree_type = None
-    if re.search(r"\bph\.?d\b|\bphd\b", program_raw, flags=re.IGNORECASE):
-        degree_type = "PhD"
-    elif re.search(r"\bms\b|\bmsc\b|\bma\b|\bmaster", program_raw, flags=re.IGNORECASE):
-        degree_type = "Masters"
-
-    sem_match = re.search(
-        r"\b(Fall|Spring|Summer|Winter)\s+(\d{4})",
-        comments + " " + status_text,
-        flags=re.IGNORECASE,
-    )
-    semester_start = sem_match.group(1).title() if sem_match else None
-    year_start = sem_match.group(2) if sem_match else None
-
-    accepted_date = _extract(
-        r"Accepted on ([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})",
-        comments,
-    )
-    rejected_date = _extract(
-        r"Rejected on ([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})",
-        comments,
-    )
-
-    if re.search(r"accept", decision_text, flags=re.IGNORECASE):
-        applicant_status = "Accepted"
-    elif re.search(r"reject", decision_text, flags=re.IGNORECASE):
-        applicant_status = "Rejected"
-    elif re.search(r"interview", decision_text, flags=re.IGNORECASE):
-        applicant_status = "Interview"
-    elif re.search(r"waitlist", decision_text, flags=re.IGNORECASE):
-        applicant_status = "Waitlisted"
-    else:
-        applicant_status = decision_text or None
-
-    return {
-        "program": program_raw,
-        "comments": comments or None,
-        "date_added": date_added or None,
-        "url": url,
-        "applicant_status": applicant_status,
-        "accepted_date": accepted_date,
-        "rejected_date": rejected_date,
-        "semester_start": semester_start,
-        "year_start": year_start,
-        "international_status": international_status,
-        "gre": gre,
-        "gre_v": gre_v,
-        "gre_aw": gre_aw,
-        "gpa": gpa,
-        "degree_type": degree_type,
-    }
-
-
-def scrape_data(min_entries=30, max_pages=3):
-    """Scrape GradCafe until at least min_entries rows are collected."""
-    all_rows = []
-
-    for page in range(1, max_pages + 1):
-        html = _fetch(BASE_URL.format(page=page))
-        if not html:
+        # Skip metadata-only rows
+        if "tw-border-none" in row.get("class", []):
+            i += 1
             continue
 
-        soup = BeautifulSoup(html, "html.parser")
-        table = soup.find("table")
-        if not table:
+        cols = row.find_all("td", recursive=False)
+        if len(cols) < 4:
+            i += 1
             continue
 
-        trs = table.find_all("tr")
-        for tr in trs[1:]:
-            parsed = _parse_row(tr)
-            if parsed:
-                all_rows.append(parsed)
+        # --- MAIN INFO ---
+        university = cols[0].get_text(strip=True)
 
-        print("Page", page, ":", len(all_rows), "rows")
+        program_td = cols[1]
+        spans = program_td.find_all("span")
+        program_name = spans[0].get_text(strip=True) if len(spans) > 0 else None
+        degree = spans[1].get_text(strip=True) if len(spans) > 1 else None
 
-        if len(all_rows) >= min_entries:
-            break
+        date_added = cols[2].get_text(strip=True)
 
-    return all_rows
+        status_text = cols[3].get_text(strip=True)
+        status = None
+        decision_date = None
+        if "Accepted" in status_text:
+            status = "Accepted"
+            m = re.search(r"Accepted on (.+)", status_text)
+            if m:
+                decision_date = m.group(1)
+        elif "Rejected" in status_text:
+            status = "Rejected"
+            m = re.search(r"Rejected on (.+)", status_text)
+            if m:
+                decision_date = m.group(1)
+
+        link = row.find("a", href=re.compile(r"/result/"))
+        entry_url = "https://www.thegradcafe.com" + link["href"] if link else None
+
+        # --- LOOK AHEAD FOR METADATA / COMMENTS ---
+        term = citizenship = gpa = comments = None
+        gre_total = gre_v = gre_aw = None
+
+        j = i + 1
+        while j < len(rows) and "tw-border-none" in rows[j].get("class", []):
+            text = rows[j].get_text(" ", strip=True)
+
+            # Term (semester/year)
+            term_match = re.search(r"(Fall|Spring|Summer)\s+\d{4}", text)
+            if term_match:
+                term = term_match.group(0)
+
+            # Citizenship
+            if "American" in text:
+                citizenship = "American"
+            elif "International" in text:
+                citizenship = "International"
+
+            # GPA
+            gpa_match = re.search(r"GPA\s*[:]?[\s]*([\d.]+)", text)
+            if gpa_match:
+                gpa = gpa_match.group(1)
+
+            # Comments
+            comment_p = rows[j].find("p")
+            if comment_p:
+                comments = comment_p.get_text(strip=True)
+
+            # --- GRE Scores ---
+            gre_total_match = re.search(r"GRE[:\s]*([\d]{3})", text)
+            if gre_total_match:
+                gre_total = gre_total_match.group(1)
+
+            gre_v_match = re.search(r"V[:\s]*([\d]{2,3})", text)
+            if gre_v_match:
+                gre_v = gre_v_match.group(1)
+
+            gre_aw_match = re.search(r"AW[:\s]*([\d.]+)", text)
+            if gre_aw_match:
+                gre_aw = gre_aw_match.group(1)
+
+            j += 1
+
+        results.append({
+            "Program Name": program_name or "",
+            "University": university or "",
+            "Comments": comments or "",
+            "Date of Information Added to Grad Café": date_added or "",
+            "URL link to applicant entry": entry_url or "",
+            "Applicant Status": status or "",
+            "Accepted / Rejected Date": decision_date or "",
+            "Semester and Year of Program Start": term or "",
+            "International / American Student": citizenship or "",
+            "Masters or PhD": degree or "",
+            "GPA": gpa or "",
+            "GRE Score": gre_total or "",
+            "GRE V Score": gre_v or "",
+            "GRE AW": gre_aw or ""
+        })
+
+        i = j
+
+    return results
 
 
-def save_data(rows, path=RAW_OUTPUT_FILE):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
-    print("Saved", len(rows), "rows to", path)
+def scrape_data(pages=2):
+    """Scrape Grad Café data for multiple pages."""
+    data = []
+    for page_number in range(1, pages + 1):
+        url = f"{BASE_URL}?page={page_number}"
+        html = fetch_html(url)
+        page_data = parse_results(html)
+        data.extend(page_data)
+        print(f"Scraped page {page_number}, entries found: {len(page_data)}")
+    return data
+
+
+def save_data(data, filename="applicant_data.json"):
+    """Save scraped data to JSON."""
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def load_data(filename="applicant_data.json"):
+    """Load scraped data from JSON."""
+    with open(filename, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 if __name__ == "__main__":
-    rows = scrape_data()
-    save_data(rows)
+    data = scrape_data(pages=2)  # Increase pages for larger dataset
+    print(f"Total entries scraped: {len(data)}")
+    save_data(data)
