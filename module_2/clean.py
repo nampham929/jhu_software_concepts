@@ -48,5 +48,5 @@ def save_data(data: list, filename: str = "cleaned_applicant_data.json") -> None
 if __name__ == "__main__":
     raw_data = load_data("applicant_data.json")
     cleaned_data = clean_data(raw_data)
-    save_data(cleaned_data, "applicant_data.json")
+    save_data(cleaned_data, "cleaned_applicant_data.json")
     print(f"Cleaned data saved to cleaned_applicant_data.json ({len(cleaned_data)} records)")

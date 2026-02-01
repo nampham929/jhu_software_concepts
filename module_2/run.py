@@ -10,7 +10,7 @@ def main():
     print(scrape._check_robots_allowed(scrape.BASE_URL))
 
     #Scrape data
-    raw_data = scrape.scrape_data(pages=5)
+    raw_data = scrape.scrape_data(pages=3000)
     scrape.save_data(raw_data, "applicant_data.json")
     print(f"Scraping complete: {len(raw_data)} records saved to applicant_data.json")
 

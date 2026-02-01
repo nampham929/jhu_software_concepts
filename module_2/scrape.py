@@ -3,6 +3,7 @@ import urllib.robotparser
 from bs4 import BeautifulSoup
 import json
 import re
+import time
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 BASE_URL = "https://www.thegradcafe.com/survey/"
@@ -174,7 +175,9 @@ def _parse_page(html: str) -> list:
 def scrape_data(pages: int = 5) -> list:
     data = []
     for page in range(1, pages + 1):
+        print(f"Fetching page {page}...")  # LIVE progress
         html = _fetch_html(f"{BASE_URL}?page={page}")
+        time.sleep(0.5)
         page_data = _parse_page(html)
         data.extend(page_data)
     return data

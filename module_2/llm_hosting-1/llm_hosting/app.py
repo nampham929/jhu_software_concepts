@@ -16,6 +16,8 @@ from llama_cpp import Llama  # CPU-only by default if N_GPU_LAYERS=0
 
 app = Flask(__name__)
 
+sys.stdout.reconfigure(encoding="utf-8")  # ← ADD THIS
+
 # ---------------- Model config ----------------
 MODEL_REPO = os.getenv(
     "MODEL_REPO",
