@@ -2,8 +2,8 @@ import psycopg
 from psycopg import OperationalError
 import json
 
+# Create a connection to PostgreSQL database
 def create_connection(db_name, db_user, db_password, db_host, db_port):
-    """Create a connection to PostgreSQL database."""
     connection = None
     try:
         connection = psycopg.connect(
@@ -19,8 +19,8 @@ def create_connection(db_name, db_user, db_password, db_host, db_port):
         raise
     return connection
 
+# Create the applicants table if it doesn't exist
 def create_applicants_table(connection):
-    """Create the applicants table if it doesn't exist."""
     create_table_query = """
     CREATE TABLE IF NOT EXISTS applicants (
         p_id SERIAL PRIMARY KEY,
@@ -49,8 +49,8 @@ def create_applicants_table(connection):
         connection.rollback()
         raise
 
+# Parse date string in format 'Month DD, YYYY' to 'YYYY-MM-DD'
 def parse_date(date_string):
-    """Parse date string in format 'Month DD, YYYY' to 'YYYY-MM-DD'."""
     if not date_string:
         return None
     try:
@@ -61,8 +61,8 @@ def parse_date(date_string):
         print(f"Warning: Could not parse date '{date_string}'")
         return None
 
+# Parse float value, return None if empty or invalid.
 def parse_float(value):
-    """Parse float value, return None if empty or invalid."""
     if value is None or value == "":
         return None
     try:
@@ -70,8 +70,8 @@ def parse_float(value):
     except ValueError:
         return None
 
+# Determine the right type of encoding used to open the JSONL file.
 def detect_file_encoding(file_path):
-    """Detect file encoding by BOM; fall back to utf-8 if unknown."""
     with open(file_path, "rb") as f:
         first_bytes = f.read(4)
     if first_bytes.startswith(b"\xff\xfe") or first_bytes.startswith(b"\xfe\xff"):
@@ -80,8 +80,8 @@ def detect_file_encoding(file_path):
         return "utf-8-sig"
     return "utf-8"
 
+# Load data from JSONL file into the applicants table
 def load_data_from_jsonl(connection, jsonl_file):
-    """Load data from JSONL file into the applicants table."""
     try:
         inserted_count = 0
         error_count = 0
@@ -171,23 +171,6 @@ def load_data_from_jsonl(connection, jsonl_file):
         connection.rollback()
         raise
 
-def query_first_row(connection):
-    """Query and display the first row from the applicants table."""
-    try:
-        cursor = connection.execute("SELECT * FROM applicants ORDER BY p_id LIMIT 1;")
-        row = cursor.fetchone()
-        if row:
-            print("\n--- First Row in Database ---")
-            date_added = row[3]
-            date_added_display = date_added.isoformat() if hasattr(date_added, "isoformat") else date_added
-            print(f"Date added: {date_added_display}")
-            print(f"Status: {row[5]}")  # status is the 6th column (index 5)
-            print(f"Full row data: {row}")
-        else:
-            print("No data found in the table.")
-    except Exception as e:
-        print(f"Error querying data: {e}")
-
 def main():
     """Main function to orchestrate the data loading process."""
     # Database configuration - replace with your actual credentials
@@ -209,9 +192,6 @@ def main():
         
         # Load data
         load_data_from_jsonl(conn, jsonl_file)
-        
-        # Query and display first row
-        query_first_row(conn)
         
         # Close connection
         conn.close()

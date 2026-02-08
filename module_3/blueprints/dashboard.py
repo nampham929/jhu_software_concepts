@@ -1,16 +1,36 @@
+"""Flask dashboard blueprint for GradCafe data and query reporting."""
 import json
 import os
 import sys
+import threading
 
-from flask import Blueprint, render_template, redirect, request, url_for
+from flask import Blueprint, jsonify, render_template, redirect, request, url_for
 import psycopg
 from psycopg import OperationalError
 
 from load_data import create_applicants_table, parse_date, parse_float
+import query_data
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
+# Shared state for the long-running pull job, guarded by a lock.
+pull_state_lock = threading.Lock()
+pull_status_state = {
+    "running": False,
+    "message": "Idle",
+    "progress": {
+        "processed": 0,
+        "inserted": 0,
+        "duplicates": 0,
+        "missing_urls": 0,
+        "errors": 0,
+        "pages_scraped": 0,
+        "current_page": None,
+    },
+}
+
+# Default database settings used by the dashboard and pull job.
 DB_CONFIG = {
     "db_name": "postgres",
     "db_user": "postgres",
@@ -37,199 +57,19 @@ def create_connection(db_name, db_user, db_password, db_host, db_port):
 
 
 def load_query_results():
-    queries = [
-        {
-            "title": "Q1: Entries for Fall 2026",
-            "description": "Counts entries where term is exactly 'Fall 2026'.",
-            "sql": """
-                SELECT COUNT(*)
-                FROM applicants
-                WHERE term = 'Fall 2026';
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q2: Percent international (not American/Other)",
-            "description": "Percent of entries where nationality is not American or Other.",
-            "sql": """
-                SELECT ROUND(
-                    100.0 * SUM(CASE WHEN LOWER(us_or_international) NOT IN ('american', 'other') THEN 1 ELSE 0 END)
-                    / NULLIF(COUNT(*), 0),
-                    2
-                ) AS percent_international
-                FROM applicants
-                WHERE us_or_international IS NOT NULL AND us_or_international <> '';
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q3: Average GPA/GRE metrics",
-            "description": "Averages only rows where each metric is present.",
-            "sql": """
-                SELECT
-                    ROUND(AVG(gpa)::numeric, 2) AS avg_gpa,
-                    ROUND(AVG(gre)::numeric, 2) AS avg_gre,
-                    ROUND(AVG(gre_v)::numeric, 2) AS avg_gre_v,
-                    ROUND(AVG(gre_aw)::numeric, 2) AS avg_gre_aw
-                FROM applicants
-                WHERE gpa IS NOT NULL OR gre IS NOT NULL OR gre_v IS NOT NULL OR gre_aw IS NOT NULL;
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q4: Average GPA of American students in Fall 2026",
-            "description": "Averages GPA for American students only, within Fall 2026 entries.",
-            "sql": """
-                SELECT ROUND(AVG(gpa)::numeric, 2) AS avg_gpa_american_fall_2026
-                FROM applicants
-                WHERE term = 'Fall 2026'
-                  AND LOWER(us_or_international) = 'american'
-                  AND gpa IS NOT NULL
-                  AND gpa < 5.0;
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q5: Percent of Fall 2025 acceptances",
-            "description": "Percent of Fall 2025 entries with status 'Accepted'.",
-            "sql": """
-                SELECT ROUND(
-                    100.0 * SUM(CASE WHEN LOWER(status) = 'accepted' THEN 1 ELSE 0 END)
-                    / NULLIF(COUNT(*), 0),
-                    2
-                ) AS percent_accept_fall_2025
-                FROM applicants
-                WHERE term = 'Fall 2025';
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q6: Average GPA of Fall 2026 acceptances",
-            "description": "Averages GPA for accepted applicants in Fall 2026.",
-            "sql": """
-                SELECT ROUND(AVG(gpa)::numeric, 2) AS avg_gpa_fall_2026_accepts
-                FROM applicants
-                WHERE term = 'Fall 2026'
-                  AND LOWER(status) = 'accepted'
-                  AND gpa IS NOT NULL
-                  AND gpa < 5.0;
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q7: JHU masters in Computer Science",
-            "description": "Counts entries with program including Johns Hopkins and Computer Science, and degree as masters.",
-            "sql": """
-                SELECT COUNT(*)
-                FROM applicants
-                WHERE program ILIKE %s
-                  AND program ILIKE %s
-                  AND degree ILIKE %s;
-            """,
-            "params": ("%Johns Hopkins%", "%Computer Science%", "Master%"),
-        },
-        {
-            "title": "Q8: 2026 CS PhD acceptances (selected universities)",
-            "description": "Counts acceptances in 2026 for Georgetown, MIT, Stanford, or CMU in CS PhD.",
-            "sql": """
-                SELECT COUNT(*)
-                FROM applicants
-                WHERE term LIKE %s
-                  AND LOWER(status) = 'accepted'
-                  AND degree ILIKE %s
-                  AND program ILIKE %s
-                  AND (
-                      program ILIKE %s
-                      OR program ILIKE %s
-                      OR program ILIKE %s
-                      OR program ILIKE %s
-                      OR program ILIKE %s
-                      OR program ILIKE %s
-                      OR program ILIKE %s
-                  );
-            """,
-            "params": (
-                "%2026%",
-                "PhD%",
-                "%Computer Science%",
-                "%George Town%",
-                "%Georgetown%",
-                "%Massachusetts Institute of Technology%",
-                "%MIT%",
-                "%Stanford University%",
-                "%Carnegie Mellon University%",
-                "%CMU%",
-            ),
-        },
-        {
-            "title": "Q9: 2026 CS PhD acceptances using LLM fields",
-            "description": "Counts acceptances in 2026 using llm_generated_university and llm_generated_program.",
-            "sql": """
-                SELECT COUNT(*)
-                FROM applicants
-                WHERE term LIKE %s
-                  AND LOWER(status) = 'accepted'
-                  AND degree ILIKE %s
-                  AND llm_generated_program ILIKE %s
-                  AND (
-                      llm_generated_university ILIKE %s
-                      OR llm_generated_university ILIKE %s
-                      OR llm_generated_university ILIKE %s
-                      OR llm_generated_university ILIKE %s
-                      OR llm_generated_university ILIKE %s
-                      OR llm_generated_university ILIKE %s
-                  );
-            """,
-            "params": (
-                "%2026%",
-                "PhD%",
-                "%Computer Science%",
-                "%George Town University%",
-                "%Massachusetts Institute of Technology%",
-                "%MIT%",
-                "%Stanford University%",
-                "%Carnegie Mellon University%",
-                "%CMU%",
-            ),
-        },
-        {
-            "title": "Q10: Top 5 universities by total submissions",
-            "description": "Top 5 universities by count (using LLM generated university).",
-            "sql": """
-                SELECT llm_generated_university, COUNT(*) AS total_submissions
-                FROM applicants
-                WHERE llm_generated_university IS NOT NULL AND llm_generated_university <> ''
-                GROUP BY llm_generated_university
-                ORDER BY total_submissions DESC
-                LIMIT 5;
-            """,
-            "params": None,
-        },
-        {
-            "title": "Q11: Acceptance rate for international students",
-            "description": "Acceptance rate for international students (not American/Other).",
-            "sql": """
-                SELECT ROUND(
-                    100.0 * SUM(CASE WHEN LOWER(status) = 'accepted' THEN 1 ELSE 0 END)
-                    / NULLIF(COUNT(*), 0),
-                    2
-                ) AS percent_international_accepts
-                FROM applicants
-                WHERE LOWER(us_or_international) NOT IN ('american', 'other')
-                  AND us_or_international IS NOT NULL
-                  AND us_or_international <> '';
-            """,
-            "params": None,
-        },
-    ]
+    """Execute all dashboard queries and prepare results for rendering."""
+    queries = query_data.get_queries()
 
     results = []
     connection = create_connection(**DB_CONFIG)
     try:
         for query in queries:
-            cursor = connection.execute(query["sql"], query["params"] or ())
-            rows = cursor.fetchall()
-            columns = [col.name for col in cursor.description] if cursor.description else []
+            rows, columns = query_data.execute_query(
+                connection, query["sql"], query["params"] or ()
+            )
+            display = query_data.format_display(
+                rows, query.get("display_mode"), query.get("display_labels")
+            )
             results.append(
                 {
                     "title": query["title"],
@@ -237,10 +77,12 @@ def load_query_results():
                     "sql": query["sql"].strip(),
                     "columns": columns,
                     "rows": rows,
+                    "display": display,
                     "error": None,
                 }
             )
     except Exception as exc:
+        # Provide a single error result so the UI can render gracefully.
         results.append(
             {
                 "title": "Query Error",
@@ -258,31 +100,101 @@ def load_query_results():
 
 
 def _ensure_module_2_on_path() -> str:
-    module_2_path = os.path.join(os.path.dirname(__file__), "..", "module_2")
-    module_2_path = os.path.abspath(module_2_path)
-    if module_2_path not in sys.path:
-        sys.path.insert(0, module_2_path)
-    return module_2_path
+    """Make module_2 importable when running the dashboard."""
+    module_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if module_root not in sys.path:
+        sys.path.insert(0, module_root)
+    return module_root
 
 
 def _fetch_existing_urls(connection) -> set:
+    """Return the set of applicant URLs already stored in the database."""
     cursor = connection.execute(
         "SELECT url FROM applicants WHERE url IS NOT NULL AND url <> '';"
     )
     return {row[0] for row in cursor.fetchall()}
 
 
-def pull_gradcafe_data(pages: int = 5) -> dict:
-    _ensure_module_2_on_path()
-    import scrape
-    import clean
+def _fetch_latest_url(connection) -> str | None:
+    """Return the most recent applicant URL based on highest primary key."""
+    cursor = connection.execute(
+        "SELECT url FROM applicants WHERE url IS NOT NULL AND url <> '' ORDER BY date_added DESC LIMIT 1;"
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
 
-    raw_data = scrape.scrape_data(pages=pages)
+
+def _save_pull_state(last_page: int) -> None:
+    """Persist the last scraped page index to disk."""
+    state_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "last_pull.json")
+    )
+    with open(state_path, "w", encoding="utf-8") as file_handle:
+        json.dump({"last_page": last_page}, file_handle, indent=2)
+
+
+def pull_gradcafe_data(progress_callback=None) -> dict:
+    """Scrape new GradCafe pages, clean them, and insert new rows."""
+    _ensure_module_2_on_path()
+    from module_2 import scrape, clean
+
+    start_page = 1
+    raw_data = []
+    last_page = 0
+    pages_scraped = 0
+
+    connection = create_connection(**DB_CONFIG)
+    try:
+        stop_url = _fetch_latest_url(connection)
+        existing_urls = _fetch_existing_urls(connection)
+    finally:
+        connection.close()
+
+    page = start_page
+    # Scrape until a page returns no data.
+    while True:
+        html = scrape._fetch_html(f"{scrape.BASE_URL}?page={page}")
+        page_data = scrape._parse_page(html)
+        if not page_data:
+            break
+        if stop_url:
+            stop_index = next(
+                (index for index, entry in enumerate(page_data) if entry.get("url") == stop_url),
+                None,
+            )
+            if stop_index is not None:
+                raw_data.extend(page_data[:stop_index])
+                last_page = page
+                pages_scraped += 1
+                if progress_callback:
+                    progress_callback(
+                        progress={
+                            "pages_scraped": pages_scraped,
+                            "current_page": page,
+                        }
+                    )
+                break
+
+        raw_data.extend(page_data)
+        last_page = page
+        pages_scraped += 1
+        if progress_callback:
+            progress_callback(
+                progress={
+                    "pages_scraped": pages_scraped,
+                    "current_page": page,
+                }
+            )
+        page += 1
+
+    if pages_scraped:
+        _save_pull_state(last_page)
+
+    # Normalize the scraped data before inserting.
     cleaned_data = clean.clean_data(raw_data)
 
     connection = create_connection(**DB_CONFIG)
     create_applicants_table(connection)
-    existing_urls = _fetch_existing_urls(connection)
 
     insert_query = """
         INSERT INTO applicants (
@@ -337,11 +249,22 @@ def pull_gradcafe_data(pages: int = 5) -> dict:
 
             if index % 100 == 0:
                 connection.commit()
+                if progress_callback:
+                    progress_callback(
+                        progress={
+                            "processed": index,
+                            "inserted": inserted_count,
+                            "duplicates": duplicate_count,
+                            "missing_urls": missing_url_count,
+                            "errors": error_count,
+                        }
+                    )
 
         connection.commit()
     finally:
         connection.close()
 
+    # Save the new entries for inspection/debugging.
     new_data_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "new_data.json")
     )
@@ -349,7 +272,10 @@ def pull_gradcafe_data(pages: int = 5) -> dict:
         json.dump(new_entries, file_handle, indent=2, ensure_ascii=False)
 
     return {
-        "pages": pages,
+        "start_page": start_page,
+        "end_page": last_page,
+        "pages_scraped": pages_scraped,
+        "processed": len(cleaned_data),
         "inserted": inserted_count,
         "duplicates": duplicate_count,
         "missing_urls": missing_url_count,
@@ -357,34 +283,150 @@ def pull_gradcafe_data(pages: int = 5) -> dict:
     }
 
 
+def _get_pull_in_progress() -> bool:
+    """Return True if a pull job is currently running."""
+    with pull_state_lock:
+        return pull_status_state["running"]
+
+
+def _set_pull_in_progress(value: bool) -> None:
+    """Set the pull job running flag."""
+    with pull_state_lock:
+        pull_status_state["running"] = value
+
+
+def _try_start_pull() -> bool:
+    """Attempt to mark a pull job as running; return False if one is active."""
+    with pull_state_lock:
+        if pull_status_state["running"]:
+            return False
+        pull_status_state["running"] = True
+        return True
+
+
+def _update_pull_status(message=None, progress=None) -> None:
+    """Update status text and progress counters for the UI."""
+    with pull_state_lock:
+        if message is not None:
+            pull_status_state["message"] = message
+        if progress:
+            pull_status_state["progress"].update(progress)
+
+
+def _get_pull_status_snapshot() -> dict:
+    """Return a safe snapshot of current pull status for the UI."""
+    with pull_state_lock:
+        return {
+            "running": pull_status_state["running"],
+            "message": pull_status_state["message"],
+            "progress": dict(pull_status_state["progress"]),
+        }
+
+
 @dashboard_bp.route("/")
 def dashboard():
+    """Render the main dashboard page with live query results."""
     pull_status = request.args.get("pull_status")
     pull_message = request.args.get("pull_message")
+    is_pull_running = _get_pull_in_progress()
+    pull_state = _get_pull_status_snapshot()
     results = load_query_results()
     return render_template(
         "dashboard.html",
         results=results,
         pull_status=pull_status,
         pull_message=pull_message,
+        pull_in_progress=is_pull_running,
+        pull_state=pull_state,
     )
 
 
 @dashboard_bp.route("/pull-data", methods=["POST"])
 def pull_data():
-    try:
-        summary = pull_gradcafe_data(pages=5)
-        message = (
-            "Pulled {pages} pages. Added {inserted} new entries; "
-            "skipped {duplicates} duplicates and {missing_urls} entries without URLs."
-        ).format(**summary)
-        if summary["errors"]:
-            message += f" {summary['errors']} inserts failed."
+    """Start a background pull job and redirect back to the dashboard."""
+    if not _try_start_pull():
         return redirect(
-            url_for("dashboard.dashboard", pull_status="success", pull_message=message)
+            url_for(
+                "dashboard.dashboard",
+                pull_status="warning",
+                pull_message="Pull Data is already running. Please wait for it to finish.",
+            )
+        )
+    try:
+        _update_pull_status(
+            message="Pull started. Scraping pages and inserting new rows.",
+            progress={
+                "processed": 0,
+                "inserted": 0,
+                "duplicates": 0,
+                "missing_urls": 0,
+                "errors": 0,
+                "pages_scraped": 0,
+                "current_page": None,
+            },
+        )
+        # Run the pull in a background thread so the request returns quickly.
+        thread = threading.Thread(target=_run_pull_job, daemon=True)
+        thread.start()
+        return redirect(
+            url_for(
+                "dashboard.dashboard",
+                pull_status="success",
+                pull_message="Pull started. Progress will update while it runs.",
+            )
         )
     except Exception as exc:
         message = f"Pull failed: {exc}"
         return redirect(
             url_for("dashboard.dashboard", pull_status="error", pull_message=message)
         )
+
+
+def _run_pull_job() -> None:
+    """Execute the pull job and update the shared status on completion."""
+    try:
+        summary = pull_gradcafe_data(progress_callback=_update_pull_status)
+        if summary["pages_scraped"]:
+            message = (
+                "Pulled pages {start_page}-{end_page}. Added {inserted} new entries; "
+                "skipped {duplicates} duplicates and {missing_urls} entries without URLs."
+            ).format(**summary)
+        else:
+            message = (
+                "No new pages found starting at page {start_page}. "
+                "Added {inserted} new entries; skipped {duplicates} duplicates and "
+                "{missing_urls} entries without URLs."
+            ).format(**summary)
+        if summary["errors"]:
+            message += f" {summary['errors']} inserts failed."
+        _update_pull_status(message=message, progress=summary)
+    except Exception as exc:
+        _update_pull_status(message=f"Pull failed: {exc}")
+    finally:
+        _set_pull_in_progress(False)
+
+
+@dashboard_bp.route("/update-analysis", methods=["POST"])
+def update_analysis():
+    """Refresh the dashboard after data changes (no server-side work)."""
+    if _get_pull_in_progress():
+        return redirect(
+            url_for(
+                "dashboard.dashboard",
+                pull_status="warning",
+                pull_message="Update Analysis is disabled while Pull Data is running.",
+            )
+        )
+    return redirect(
+        url_for(
+            "dashboard.dashboard",
+            pull_status="success",
+            pull_message="Analysis refreshed with the latest results.",
+        )
+    )
+
+
+@dashboard_bp.route("/pull-status", methods=["GET"])
+def pull_status():
+    """Provide pull status updates for the polling UI."""
+    return jsonify(_get_pull_status_snapshot())

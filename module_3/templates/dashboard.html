@@ -18,11 +18,35 @@
     <section class="pull-data">
       <div>
         <h2>Pull Data</h2>
-        <p>Fetches the newest five GradCafe survey pages using the module 2 scraper and appends any new entries to the database.</p>
+        <p>Fetches GradCafe survey pages starting after the last page pulled and appends any new entries to the database.</p>
       </div>
       <form action="{{ url_for('dashboard.pull_data') }}" method="post">
-        <button type="submit" class="pull-button">Pull Data</button>
+        <button type="submit" class="pull-button" {% if pull_in_progress %}disabled aria-disabled="true"{% endif %}>
+          Pull Data
+        </button>
       </form>
+    </section>
+    <section class="pull-progress" aria-live="polite">
+      <div class="progress-title">Pull Status</div>
+      <div id="pull-status-message" class="progress-message">{{ pull_state.message }}</div>
+      <div id="pull-status-counts" class="progress-counts"></div>
+      <div class="progress-hint">Progress updates in batches of 100 records.</div>
+    </section>
+    <section class="pull-data">
+      <div>
+        <h2>Update Analysis</h2>
+        <p>Refreshes the dashboard so the latest database updates are reflected in the results.</p>
+      </div>
+      <div class="update-actions">
+        <form action="{{ url_for('dashboard.update_analysis') }}" method="post">
+          <button id="update-analysis-button" type="submit" class="pull-button" {% if pull_in_progress %}disabled aria-disabled="true"{% endif %}>
+            Update Analysis
+          </button>
+        </form>
+        {% if pull_in_progress %}
+          <div id="update-analysis-note" class="action-note">Pull Data is running, so this action is temporarily disabled.</div>
+        {% endif %}
+      </div>
     </section>
     {% if pull_status and pull_message %}
       <div class="pull-status {{ pull_status }}">{{ pull_message }}</div>
@@ -37,7 +61,9 @@
           <div class="error">{{ item.error }}</div>
         {% else %}
           <div class="result">
-            {% if item.rows|length == 1 and item.columns|length == 1 %}
+            {% if item.display %}
+              <strong>Answer:</strong> {{ item.display }}
+            {% elif item.rows|length == 1 and item.columns|length == 1 %}
               <strong>{{ item.columns[0].replace('_', ' ').title() }}:</strong> {{ item.rows[0][0] }}
             {% else %}
               <table>
@@ -68,5 +94,82 @@
   <footer>
     Data refreshes on page load. Run the Flask app to view current results.
   </footer>
+  <script id="pull-state" type="application/json">{{ pull_state.progress | tojson }}</script>
+  <script>
+    const pullStatusMessage = document.getElementById('pull-status-message');
+    const pullStatusCounts = document.getElementById('pull-status-counts');
+    const pullStateJson = document.getElementById('pull-state');
+    const updateAnalysisButton = document.getElementById('update-analysis-button');
+    const updateAnalysisNote = document.getElementById('update-analysis-note');
+
+    function renderCounts(progress) {
+      if (!progress) {
+        pullStatusCounts.textContent = '';
+        return;
+      }
+      const parts = [];
+      if (progress.pages_scraped) {
+        parts.push(`Pages: ${progress.pages_scraped}`);
+      }
+      if (progress.processed) {
+        parts.push(`Processed: ${progress.processed}`);
+      }
+      if (progress.inserted) {
+        parts.push(`Inserted: ${progress.inserted}`);
+      }
+      if (progress.duplicates) {
+        parts.push(`Duplicates: ${progress.duplicates}`);
+      }
+      if (progress.missing_urls) {
+        parts.push(`Missing URLs: ${progress.missing_urls}`);
+      }
+      if (progress.errors) {
+        parts.push(`Errors: ${progress.errors}`);
+      }
+      pullStatusCounts.textContent = parts.join(' | ');
+    }
+
+    function updateAnalysisAvailability(isRunning) {
+      if (!updateAnalysisButton) return;
+      if (isRunning) {
+        updateAnalysisButton.setAttribute('disabled', '');
+        updateAnalysisButton.setAttribute('aria-disabled', 'true');
+        if (updateAnalysisNote) {
+          updateAnalysisNote.style.display = 'block';
+        }
+      } else {
+        updateAnalysisButton.removeAttribute('disabled');
+        updateAnalysisButton.removeAttribute('aria-disabled');
+        if (updateAnalysisNote) {
+          updateAnalysisNote.style.display = 'none';
+        }
+      }
+    }
+
+    async function pollPullStatus() {
+      try {
+        const response = await fetch("{{ url_for('dashboard.pull_status') }}");
+        if (!response.ok) return;
+        const data = await response.json();
+        if (pullStatusMessage && data.message) {
+          pullStatusMessage.textContent = data.message;
+        }
+        renderCounts(data.progress);
+        updateAnalysisAvailability(Boolean(data.running));
+      } catch (error) {
+        // Ignore polling errors.
+      }
+    }
+
+    if (pullStateJson) {
+      try {
+        renderCounts(JSON.parse(pullStateJson.textContent));
+      } catch (error) {
+        renderCounts(null);
+      }
+    }
+    updateAnalysisAvailability({{ 'true' if pull_in_progress else 'false' }});
+    setInterval(pollPullStatus, 2000);
+  </script>
 </body>
 </html>
