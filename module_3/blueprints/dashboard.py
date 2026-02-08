@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -66,10 +67,10 @@ def load_query_results():
             "description": "Averages only rows where each metric is present.",
             "sql": """
                 SELECT
-                    AVG(gpa) AS avg_gpa,
-                    AVG(gre) AS avg_gre,
-                    AVG(gre_v) AS avg_gre_v,
-                    AVG(gre_aw) AS avg_gre_aw
+                    ROUND(AVG(gpa)::numeric, 2) AS avg_gpa,
+                    ROUND(AVG(gre)::numeric, 2) AS avg_gre,
+                    ROUND(AVG(gre_v)::numeric, 2) AS avg_gre_v,
+                    ROUND(AVG(gre_aw)::numeric, 2) AS avg_gre_aw
                 FROM applicants
                 WHERE gpa IS NOT NULL OR gre IS NOT NULL OR gre_v IS NOT NULL OR gre_aw IS NOT NULL;
             """,
@@ -79,7 +80,7 @@ def load_query_results():
             "title": "Q4: Average GPA of American students in Fall 2026",
             "description": "Averages GPA for American students only, within Fall 2026 entries.",
             "sql": """
-                SELECT AVG(gpa) AS avg_gpa_american_fall_2026
+                SELECT ROUND(AVG(gpa)::numeric, 2) AS avg_gpa_american_fall_2026
                 FROM applicants
                 WHERE term = 'Fall 2026'
                   AND LOWER(us_or_international) = 'american'
@@ -295,6 +296,7 @@ def pull_gradcafe_data(pages: int = 5) -> dict:
     duplicate_count = 0
     missing_url_count = 0
     error_count = 0
+    new_entries = []
 
     try:
         for index, entry in enumerate(cleaned_data, 1):
@@ -328,6 +330,7 @@ def pull_gradcafe_data(pages: int = 5) -> dict:
                 )
                 inserted_count += 1
                 existing_urls.add(url)
+                new_entries.append(entry)
             except Exception:
                 error_count += 1
                 connection.rollback()
@@ -338,6 +341,12 @@ def pull_gradcafe_data(pages: int = 5) -> dict:
         connection.commit()
     finally:
         connection.close()
+
+    new_data_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "new_data.json")
+    )
+    with open(new_data_path, "w", encoding="utf-8") as file_handle:
+        json.dump(new_entries, file_handle, indent=2, ensure_ascii=False)
 
     return {
         "pages": pages,
