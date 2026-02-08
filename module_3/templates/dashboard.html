@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graduate Admissions Query Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+  <header>
+    <h1>Graduate Admissions Query Dashboard</h1>
+    <p>Live PostgreSQL snapshots of GradCafe applicant trends, rendered as a single, stylized Flask page.</p>
+    <div class="meta">
+      <span>PostgreSQL</span>
+      <span>Flask</span>
+      <span>11 Queries</span>
+    </div>
+    <section class="pull-data">
+      <div>
+        <h2>Pull Data</h2>
+        <p>Fetches the newest five GradCafe survey pages using the module 2 scraper and appends any new entries to the database.</p>
+      </div>
+      <form action="{{ url_for('dashboard.pull_data') }}" method="post">
+        <button type="submit" class="pull-button">Pull Data</button>
+      </form>
+    </section>
+    {% if pull_status and pull_message %}
+      <div class="pull-status {{ pull_status }}">{{ pull_message }}</div>
+    {% endif %}
+  </header>
+  <main>
+    <section class="grid">
+      {% for item in results %}
+      <article class="card">
+        <h2>{{ item.title }}</h2>
+        {% if item.error %}
+          <div class="error">{{ item.error }}</div>
+        {% else %}
+          <div class="result">
+            {% if item.rows|length == 1 and item.columns|length == 1 %}
+              <strong>{{ item.columns[0].replace('_', ' ').title() }}:</strong> {{ item.rows[0][0] }}
+            {% else %}
+              <table>
+                <thead>
+                  <tr>
+                    {% for col in item.columns %}
+                    <th>{{ col.replace('_', ' ').title() }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in item.rows %}
+                  <tr>
+                    {% for value in row %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </section>
+  </main>
+  <footer>
+    Data refreshes on page load. Run the Flask app to view current results.
+  </footer>
+</body>
+</html>

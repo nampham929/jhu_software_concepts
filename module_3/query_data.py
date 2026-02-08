@@ -22,19 +22,17 @@ def create_connection(db_name, db_user, db_password, db_host, db_port):
 
 def run_query(connection, title, description, sql_query, params=None):
     """Run a query and print the result with context."""
-    print("\n" + "=" * 80)
-    print(title)
-    print(description)
-    print("SQL:")
-    print(sql_query.strip())
+    print(f"\n{title}")
     try:
         cursor = connection.execute(sql_query, params or ())
         rows = cursor.fetchall()
-        print("Result:")
-        for row in rows:
-            print(row)
+        print(f"Answer: {rows}")
+
     except Exception as e:
-        print(f"Query failed: {e}")
+        print(f"Error: {e}")
+        rows = []
+
+    return rows
 
 
 def main():
@@ -48,8 +46,10 @@ def main():
     try:
         conn = create_connection(db_name, db_user, db_password, db_host, db_port)
 
+        
+
         # 1. How many entries for Fall 2026?
-        run_query(
+        run_query( 
             conn,
             "Q1: Entries for Fall 2026",
             "Counts entries where term is exactly 'Fall 2026'.",
@@ -102,7 +102,8 @@ def main():
             FROM applicants
             WHERE term = 'Fall 2026'
               AND LOWER(us_or_international) = 'american'
-              AND gpa IS NOT NULL;
+              AND gpa IS NOT NULL
+              AND gpa < 5.0 -- Exclude unrealistic GPAs to avoid skewing the average;
             """,
         )
 
@@ -128,11 +129,12 @@ def main():
             "Q6: Average GPA of Fall 2026 acceptances",
             "Averages GPA for accepted applicants in Fall 2026.",
             """
-            SELECT AVG(gpa) AS avg_gpa_fall_2026_accepts
+            SELECT ROUND(AVG(gpa)::numeric, 2) AS avg_gpa_fall_2026_accepts
             FROM applicants
             WHERE term = 'Fall 2026'
               AND LOWER(status) = 'accepted'
-              AND gpa IS NOT NULL;
+              AND gpa IS NOT NULL
+              AND gpa < 5.0 -- Exclude unrealistic GPAs to avoid skewing the average;
             """,
         )
 
@@ -144,10 +146,11 @@ def main():
             """
             SELECT COUNT(*)
             FROM applicants
-            WHERE program ILIKE '%Johns Hopkins%'
-              AND program ILIKE '%Computer Science%'
-              AND degree ILIKE 'Master%';
+                        WHERE program ILIKE %s
+                            AND program ILIKE %s
+                            AND degree ILIKE %s;
             """,
+                        ("%Johns Hopkins%", "%Computer Science%", "Master%"),
         )
 
         # 8. 2026 acceptances for selected universities, PhD in CS
@@ -158,19 +161,32 @@ def main():
             """
             SELECT COUNT(*)
             FROM applicants
-            WHERE term LIKE '%2026%'
+            WHERE term LIKE %s
               AND LOWER(status) = 'accepted'
-              AND degree ILIKE 'PhD%'
-              AND program ILIKE '%Computer Science%'
+              AND degree ILIKE %s
+              AND program ILIKE %s
               AND (
-                  program ILIKE '%Georgetown University%'
-                  OR program ILIKE '%Massachusetts Institute of Technology%'
-                  OR program ILIKE '%MIT%'
-                  OR program ILIKE '%Stanford University%'
-                  OR program ILIKE '%Carnegie Mellon University%'
-                  OR program ILIKE '%CMU%'
+                  program ILIKE %s
+                  OR program ILIKE %s
+                  OR program ILIKE %s
+                  OR program ILIKE %s
+                  OR program ILIKE %s
+                  OR program ILIKE %s
+                  OR program ILIKE %s
               );
             """,
+            (
+                "%2026%",
+                "PhD%",
+                "%Computer Science%",
+                "%George Town%",
+                "%Georgetown%",
+                "%Massachusetts Institute of Technology%",
+                "%MIT%",
+                "%Stanford University%",
+                "%Carnegie Mellon University%",
+                "%CMU%",
+            ),
         )
 
         # 9. Same as Q8, using LLM generated fields
@@ -181,17 +197,30 @@ def main():
             """
             SELECT COUNT(*)
             FROM applicants
-            WHERE term LIKE '%2026%'
+            WHERE term LIKE %s
               AND LOWER(status) = 'accepted'
-              AND degree ILIKE 'PhD%'
-              AND llm_generated_program ILIKE '%Computer Science%'
-              AND llm_generated_university IN (
-                  'Georgetown University',
-                  'Massachusetts Institute of Technology',
-                  'Stanford University',
-                  'Carnegie Mellon University'
+              AND degree ILIKE %s
+              AND llm_generated_program ILIKE %s
+              AND (
+                  llm_generated_university ILIKE %s
+                  OR llm_generated_university ILIKE %s
+                  OR llm_generated_university ILIKE %s
+                  OR llm_generated_university ILIKE %s
+                  OR llm_generated_university ILIKE %s
+                  OR llm_generated_university ILIKE %s
               );
             """,
+            (
+                "%2026%",
+                "PhD%",
+                "%Computer Science%",
+                "%George Town University%",
+                "%Massachusetts Institute of Technology%",
+                "%MIT%",
+                "%Stanford University%",
+                "%Carnegie Mellon University%",
+                "%CMU%",
+            ),
         )
 
         # Additional question A
