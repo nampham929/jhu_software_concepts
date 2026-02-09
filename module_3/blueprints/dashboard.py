@@ -40,8 +40,8 @@ DB_CONFIG = {
 }
 
 
+# Create a connection to PostgreSQL database.
 def create_connection(db_name, db_user, db_password, db_host, db_port):
-    """Create a connection to PostgreSQL database."""
     connection = None
     try:
         connection = psycopg.connect(
@@ -56,8 +56,8 @@ def create_connection(db_name, db_user, db_password, db_host, db_port):
     return connection
 
 
-def load_query_results():
-    """Execute all dashboard queries and prepare results for rendering."""
+# Load all queries from query_data.py and prepare results for rendering.
+def load_query_results(): 
     queries = query_data.get_queries()
 
     results = []
@@ -99,24 +99,30 @@ def load_query_results():
     return results
 
 
+# Make module_2 importable when running the dashboard.
 def _ensure_module_2_on_path() -> str:
-    """Make module_2 importable when running the dashboard."""
     module_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if module_root not in sys.path:
         sys.path.insert(0, module_root)
     return module_root
 
 
+'''
+Get a set of URLs already in the DB, so the program can skip duplicates when pulling new data.  
+The pull job checks new entries against that set to skip duplicates.
+'''
 def _fetch_existing_urls(connection) -> set:
-    """Return the set of applicant URLs already stored in the database."""
     cursor = connection.execute(
         "SELECT url FROM applicants WHERE url IS NOT NULL AND url <> '';"
     )
     return {row[0] for row in cursor.fetchall()}
 
 
+'''
+Return the most recent applicant URL in the database, 
+so the pull job can stop when it reaches that URL to avoid duplicates.
+'''
 def _fetch_latest_url(connection) -> str | None:
-    """Return the most recent applicant URL based on highest primary key."""
     cursor = connection.execute(
         "SELECT url FROM applicants WHERE url IS NOT NULL AND url <> '' ORDER BY date_added DESC LIMIT 1;"
     )
@@ -124,17 +130,8 @@ def _fetch_latest_url(connection) -> str | None:
     return row[0] if row else None
 
 
-def _save_pull_state(last_page: int) -> None:
-    """Persist the last scraped page index to disk."""
-    state_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "last_pull.json")
-    )
-    with open(state_path, "w", encoding="utf-8") as file_handle:
-        json.dump({"last_page": last_page}, file_handle, indent=2)
-
-
+#Scrape new GradCafe pages, clean them, and insert new rows.
 def pull_gradcafe_data(progress_callback=None) -> dict:
-    """Scrape new GradCafe pages, clean them, and insert new rows."""
     _ensure_module_2_on_path()
     from module_2 import scrape, clean
 
@@ -186,9 +183,6 @@ def pull_gradcafe_data(progress_callback=None) -> dict:
                 }
             )
         page += 1
-
-    if pages_scraped:
-        _save_pull_state(last_page)
 
     # Normalize the scraped data before inserting.
     cleaned_data = clean.clean_data(raw_data)
@@ -283,20 +277,20 @@ def pull_gradcafe_data(progress_callback=None) -> dict:
     }
 
 
+# Check if a pull job is currently running.
 def _get_pull_in_progress() -> bool:
-    """Return True if a pull job is currently running."""
     with pull_state_lock:
         return pull_status_state["running"]
 
 
+# Set the pull job running flag.
 def _set_pull_in_progress(value: bool) -> None:
-    """Set the pull job running flag."""
     with pull_state_lock:
         pull_status_state["running"] = value
 
 
-def _try_start_pull() -> bool:
-    """Attempt to mark a pull job as running; return False if one is active."""
+# Attempt to mark a pull job as running; return False if one is active.
+def _try_start_pull() -> bool: 
     with pull_state_lock:
         if pull_status_state["running"]:
             return False
@@ -304,8 +298,8 @@ def _try_start_pull() -> bool:
         return True
 
 
+# Update status text and progress counters for the UI.
 def _update_pull_status(message=None, progress=None) -> None:
-    """Update status text and progress counters for the UI."""
     with pull_state_lock:
         if message is not None:
             pull_status_state["message"] = message
@@ -313,8 +307,8 @@ def _update_pull_status(message=None, progress=None) -> None:
             pull_status_state["progress"].update(progress)
 
 
+# Return a safe snapshot of current pull status for the UI.
 def _get_pull_status_snapshot() -> dict:
-    """Return a safe snapshot of current pull status for the UI."""
     with pull_state_lock:
         return {
             "running": pull_status_state["running"],
@@ -323,9 +317,10 @@ def _get_pull_status_snapshot() -> dict:
         }
 
 
+# Render the main dashboard page with live query results.
 @dashboard_bp.route("/")
 def dashboard():
-    """Render the main dashboard page with live query results."""
+    
     pull_status = request.args.get("pull_status")
     pull_message = request.args.get("pull_message")
     is_pull_running = _get_pull_in_progress()
@@ -340,10 +335,9 @@ def dashboard():
         pull_state=pull_state,
     )
 
-
+# Start a background pull job and redirect back to the dashboard.
 @dashboard_bp.route("/pull-data", methods=["POST"])
 def pull_data():
-    """Start a background pull job and redirect back to the dashboard."""
     if not _try_start_pull():
         return redirect(
             url_for(
@@ -382,8 +376,8 @@ def pull_data():
         )
 
 
+# The actual pull job that runs in the background thread, with status updates.
 def _run_pull_job() -> None:
-    """Execute the pull job and update the shared status on completion."""
     try:
         summary = pull_gradcafe_data(progress_callback=_update_pull_status)
         if summary["pages_scraped"]:
@@ -406,9 +400,9 @@ def _run_pull_job() -> None:
         _set_pull_in_progress(False)
 
 
+# Refresh the dashboard after data changes (no server-side work).
 @dashboard_bp.route("/update-analysis", methods=["POST"])
 def update_analysis():
-    """Refresh the dashboard after data changes (no server-side work)."""
     if _get_pull_in_progress():
         return redirect(
             url_for(
@@ -425,8 +419,7 @@ def update_analysis():
         )
     )
 
-
+# Provide pull status updates for the polling UI.
 @dashboard_bp.route("/pull-status", methods=["GET"])
 def pull_status():
-    """Provide pull status updates for the polling UI."""
     return jsonify(_get_pull_status_snapshot())

@@ -1,7 +1,10 @@
 import psycopg
 from psycopg import OperationalError
 
-
+'''
+Set of queries to run on the applicants table, 
+with metadata for display formatting.
+'''
 def get_queries():
     return [
         {
@@ -201,6 +204,7 @@ def get_queries():
         },
     ]
 
+
 # Create a connection to PostgreSQL database.
 def create_connection(db_name, db_user, db_password, db_host, db_port):
     connection = None
@@ -218,16 +222,18 @@ def create_connection(db_name, db_user, db_password, db_host, db_port):
         raise
     return connection
 
+
+# Execute a SQL query and return rows and column names.
 def execute_query(connection, sql_query, params=None):
-    """Execute a SQL query and return rows plus column names."""
     cursor = connection.execute(sql_query, params or ())
     rows = cursor.fetchall()
     columns = [col.name for col in cursor.description] if cursor.description else []
     return rows, columns
 
 
+# Format query results for simple display modes.
 def format_display(rows, display_mode, display_labels=None):
-    """Format query results for simple display modes."""
+    
     if not rows:
         return None
     if display_mode == "number" and len(rows) == 1 and len(rows[0]) == 1:
@@ -245,10 +251,8 @@ def format_display(rows, display_mode, display_labels=None):
     return None
 
 
-"""
-Run queries loaded from queries.py one query at a time
-and print results in a readable format.
-"""
+
+# Further format the result for display, and print it.
 def run_query(
     connection,
     title,
@@ -285,8 +289,8 @@ def run_query(
     return rows
 
 
+# Database configuration
 def main():
-    # Database configuration
     db_name = "postgres"
     db_user = "postgres"
     db_password = "dataBase!605"

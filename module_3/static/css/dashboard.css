@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Source+Sans+3:wght@300;400;600&display=swap');
 
+/* Theme tokens */
 :root {
   --ink: #12131a;
   --muted: #5b6270;
@@ -10,8 +11,10 @@
   --shadow: rgba(18, 19, 26, 0.12);
 }
 
+/* Global reset */
 * { box-sizing: border-box; }
 
+/* Base page styling */
 body {
   margin: 0;
   font-family: 'Source Sans 3', sans-serif;
@@ -20,6 +23,7 @@ body {
   min-height: 100vh;
 }
 
+/* Header layout */
 header {
   padding: 48px 10vw 24px;
 }
@@ -37,6 +41,7 @@ header p {
   max-width: 60ch;
 }
 
+/* Action panels */
 .pull-data {
   margin-top: 28px;
   display: flex;
@@ -50,6 +55,7 @@ header p {
   flex-wrap: wrap;
 }
 
+/* Pull progress panel */
 .pull-progress {
   margin-top: 18px;
   background: rgba(18, 19, 26, 0.04);
@@ -104,6 +110,7 @@ header p {
   max-width: 58ch;
 }
 
+/* Primary action button */
 .pull-button {
   border: none;
   background: var(--accent);
@@ -128,6 +135,7 @@ header p {
   transform: none;
 }
 
+/* Status banner styles */
 .pull-status {
   margin-top: 16px;
   padding: 12px 16px;
@@ -154,6 +162,7 @@ header p {
   border: 1px solid rgba(18, 19, 26, 0.2);
 }
 
+/* Tech tags */
 .meta {
   margin-top: 16px;
   display: inline-flex;
@@ -171,6 +180,7 @@ header p {
   font-weight: 600;
 }
 
+/* Main content grid */
 main {
   padding: 0 10vw 64px;
 }
@@ -181,6 +191,7 @@ main {
   gap: 24px;
 }
 
+/* Query cards */
 .card {
   background: var(--paper);
   border-radius: 18px;
@@ -216,6 +227,7 @@ main {
   white-space: pre-wrap;
 }
 
+/* Result area inside each card */
 .result {
   border-radius: 12px;
   padding: 12px;
@@ -228,6 +240,7 @@ main {
   font-weight: 700;
 }
 
+/* Table styles for multi-row results */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -248,6 +261,7 @@ th {
   letter-spacing: 0.04em;
 }
 
+/* Error callout */
 .error {
   padding: 12px;
   border-radius: 12px;
@@ -256,12 +270,14 @@ th {
   font-weight: 600;
 }
 
+/* Footer note */
 footer {
   padding: 20px 10vw 48px;
   color: var(--muted);
   font-size: 0.85rem;
 }
 
+/* Mobile adjustments */
 @media (max-width: 720px) {
   header, main, footer {
     padding-left: 6vw;

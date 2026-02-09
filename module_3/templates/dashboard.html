@@ -6,7 +6,8 @@
   <title>Graduate Admissions Query Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
-<body>
+<body data-pull-running="{{ 'true' if pull_in_progress else 'false' }}">
+  <!-- Header: title, tech badges, and action buttons -->
   <header>
     <h1>Graduate Admissions Query Dashboard</h1>
     <p>Live PostgreSQL snapshots of GradCafe applicant trends, rendered as a single, stylized Flask page.</p>
@@ -15,6 +16,7 @@
       <span>Flask</span>
       <span>11 Queries</span>
     </div>
+    <!-- Pull Data controls -->
     <section class="pull-data">
       <div>
         <h2>Pull Data</h2>
@@ -26,12 +28,14 @@
         </button>
       </form>
     </section>
+    <!-- Live pull progress panel -->
     <section class="pull-progress" aria-live="polite">
       <div class="progress-title">Pull Status</div>
       <div id="pull-status-message" class="progress-message">{{ pull_state.message }}</div>
       <div id="pull-status-counts" class="progress-counts"></div>
       <div class="progress-hint">Progress updates in batches of 100 records.</div>
     </section>
+    <!-- Update Analysis controls -->
     <section class="pull-data">
       <div>
         <h2>Update Analysis</h2>
@@ -48,10 +52,12 @@
         {% endif %}
       </div>
     </section>
+    <!-- Flash-style status banner after redirects -->
     {% if pull_status and pull_message %}
       <div class="pull-status {{ pull_status }}">{{ pull_message }}</div>
     {% endif %}
   </header>
+  <!-- Main results grid -->
   <main>
     <section class="grid">
       {% for item in results %}
@@ -91,9 +97,11 @@
       {% endfor %}
     </section>
   </main>
+  <!-- Footer note -->
   <footer>
     Data refreshes on page load. Run the Flask app to view current results.
   </footer>
+  <!-- Initial pull state + polling script -->
   <script id="pull-state" type="application/json">{{ pull_state.progress | tojson }}</script>
   <script>
     const pullStatusMessage = document.getElementById('pull-status-message');
@@ -168,7 +176,8 @@
         renderCounts(null);
       }
     }
-    updateAnalysisAvailability({{ 'true' if pull_in_progress else 'false' }});
+    const initialPullRunning = document.body.dataset.pullRunning === 'true';
+    updateAnalysisAvailability(initialPullRunning);
     setInterval(pollPullStatus, 2000);
   </script>
 </body>
