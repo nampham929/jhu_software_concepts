@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graduate Admissions Query Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body data-pull-running="{{ 'true' if pull_in_progress else 'false' }}">
+  <!-- Header: title, tech badges, and action buttons -->
+  <header>
+    <h1>Graduate Admissions Query Dashboard</h1>
+    <p>Live PostgreSQL snapshots of GradCafe applicant trends, rendered as a single, stylized Flask page.</p>
+    <div class="meta">
+      <span>PostgreSQL</span>
+      <span>Flask</span>
+      <span>11 Queries</span>
+    </div>
+    <!-- Pull Data controls -->
+    <section class="pull-data">
+      <div>
+        <h2>Pull Data</h2>
+        <p>Fetches GradCafe survey pages starting after the last page pulled and appends any new entries to the database.</p>
+      </div>
+      <form action="{{ url_for('dashboard.pull_data') }}" method="post">
+        <button data-testid="pull-data-btn" id="pull-data-button" type="submit" class="pull-button" {% if pull_in_progress %}disabled aria-disabled="true"{% endif %}>
+          Pull Data
+        </button>
+      </form>
+    </section>
+    <!-- Live pull progress panel -->
+    <section class="pull-progress" aria-live="polite">
+      <div class="progress-title">Pull Status</div>
+      <div id="pull-status-message" class="progress-message">{{ pull_state.message }}</div>
+      <div id="pull-status-counts" class="progress-counts"></div>
+      <div class="progress-hint">Progress updates in batches of 100 records.</div>
+    </section>
+    <!-- Update Analysis controls -->
+    <section class="pull-data">
+      <div>
+        <h2>Update Analysis</h2>
+        <p>Refreshes the dashboard so the latest database updates are reflected in the results.</p>
+      </div>
+      <div class="update-actions">
+        <form action="{{ url_for('dashboard.update_analysis') }}" method="post">
+          <button data-testid="update-analysis-btn" id="update-analysis-button" type="submit" class="pull-button" {% if pull_in_progress %}disabled aria-disabled="true"{% endif %}>
+            Update Analysis
+          </button>
+        </form>
+        {% if pull_in_progress %}
+          <div id="update-analysis-note" class="action-note">Pull Data is running, so this action is temporarily disabled.</div>
+        {% endif %}
+      </div>
+    </section>
+    <!-- Flash-style status banner after redirects -->
+    {% if pull_status and pull_message %}
+      <div class="pull-status {{ pull_status }}">{{ pull_message }}</div>
+    {% endif %}
+  </header>
+  <!-- Main results grid -->
+  <main>
+    <section class="grid">
+      {% for item in results %}
+      <article class="card">
+        <h2>{{ item.title }}</h2>
+        {% if item.error %}
+          <div class="error">{{ item.error }}</div>
+        {% else %}
+          <div class="result">
+            {% if item.display %}
+              <strong>Answer:</strong> {{ item.display }}
+            {% elif item.rows|length == 1 and item.columns|length == 1 %}
+              <strong>{{ item.columns[0].replace('_', ' ').title() }}:</strong> {{ item.rows[0][0] }}
+            {% else %}
+              <table>
+                <thead>
+                  <tr>
+                    {% for col in item.columns %}
+                    <th>{{ col.replace('_', ' ').title() }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in item.rows %}
+                  <tr>
+                    {% for value in row %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </section>
+  </main>
+  <!-- Footer note -->
+  <footer>
+    Data refreshes on page load. Run the Flask app to view current results.
+  </footer>
+  <!-- Initial pull state + polling script -->
+  <script id="pull-state" type="application/json">{{ pull_state.progress | tojson }}</script>
+  <script>
+    const pullStatusMessage = document.getElementById('pull-status-message');
+    const pullStatusCounts = document.getElementById('pull-status-counts');
+    const pullStateJson = document.getElementById('pull-state');
+    const updateAnalysisButton = document.getElementById('update-analysis-button');
+    const updateAnalysisNote = document.getElementById('update-analysis-note');
+
+    function renderCounts(progress) {
+      if (!progress) {
+        pullStatusCounts.textContent = '';
+        return;
+      }
+      const parts = [];
+      if (progress.pages_scraped) {
+        parts.push(`Pages: ${progress.pages_scraped}`);
+      }
+      if (progress.processed) {
+        parts.push(`Processed: ${progress.processed}`);
+      }
+      if (progress.inserted) {
+        parts.push(`Inserted: ${progress.inserted}`);
+      }
+      if (progress.duplicates) {
+        parts.push(`Duplicates: ${progress.duplicates}`);
+      }
+      if (progress.missing_urls) {
+        parts.push(`Missing URLs: ${progress.missing_urls}`);
+      }
+      if (progress.errors) {
+        parts.push(`Errors: ${progress.errors}`);
+      }
+      pullStatusCounts.textContent = parts.join(' | ');
+    }
+
+    function updateAnalysisAvailability(isRunning) {
+      if (!updateAnalysisButton) return;
+      if (isRunning) {
+        updateAnalysisButton.setAttribute('disabled', '');
+        updateAnalysisButton.setAttribute('aria-disabled', 'true');
+        if (updateAnalysisNote) {
+          updateAnalysisNote.style.display = 'block';
+        }
+      } else {
+        updateAnalysisButton.removeAttribute('disabled');
+        updateAnalysisButton.removeAttribute('aria-disabled');
+        if (updateAnalysisNote) {
+          updateAnalysisNote.style.display = 'none';
+        }
+      }
+    }
+
+    async function pollPullStatus() {
+      try {
+        const response = await fetch("{{ url_for('dashboard.pull_status') }}");
+        if (!response.ok) return;
+        const data = await response.json();
+        if (pullStatusMessage && data.message) {
+          pullStatusMessage.textContent = data.message;
+        }
+        renderCounts(data.progress);
+        updateAnalysisAvailability(Boolean(data.running));
+      } catch (error) {
+        // Ignore polling errors.
+      }
+    }
+
+    if (pullStateJson) {
+      try {
+        renderCounts(JSON.parse(pullStateJson.textContent));
+      } catch (error) {
+        renderCounts(null);
+      }
+    }
+    const initialPullRunning = document.body.dataset.pullRunning === 'true';
+    updateAnalysisAvailability(initialPullRunning);
+    setInterval(pollPullStatus, 2000);
+  </script>
+</body>
+</html>
+

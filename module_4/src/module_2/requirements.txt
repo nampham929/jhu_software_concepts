@@ -1,0 +1,5 @@
+
+Flask>=2.3.2
+llama-cpp-python>=0.1.80
+huggingface_hub>=0.16.4
+beautifulsoup4>=4.12.2
