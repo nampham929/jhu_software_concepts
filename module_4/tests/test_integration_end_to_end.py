@@ -9,51 +9,7 @@ from flask_app import create_app
 from load_data import create_applicants_table
 
 
-def _reset_table(db_url: str) -> None:
-    conn = dashboard.create_connection(database_url=db_url)
-    try:
-        create_applicants_table(conn)
-        conn.execute("TRUNCATE TABLE applicants;")
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _build_pull_runner(db_url: str):
-    records = [
-        (
-            "Computer Science, Johns Hopkins University",
-            "row one",
-            "2026-02-10",
-            "https://example.test/e2e-1",
-            "Accepted",
-            "Fall 2026",
-            "American",
-            3.9,
-            330,
-            165,
-            4.5,
-            "Masters",
-            "Computer Science",
-            "Johns Hopkins University",
-        ),
-        (
-            "Computer Science, MIT",
-            "row two",
-            "2026-02-11",
-            "https://example.test/e2e-2",
-            "Rejected",
-            "Fall 2026",
-            "International",
-            3.7,
-            325,
-            160,
-            4.0,
-            "PhD",
-            "Computer Science",
-            "MIT",
-        ),
-    ]
+def _build_pull_runner(db_url: str, records: list[tuple]):
 
     def fake_pull_runner(progress_callback=None):
         conn = dashboard.create_connection(database_url=db_url)
@@ -137,19 +93,24 @@ def _analysis_results_from_db(db_url: str):
     ]
 
 
-@pytest.mark.integration
-def test_end_to_end_pull_update_render(db_ready, monkeypatch, db_url):
-    _reset_table(db_url)
+def test_end_to_end_pull_update_render(
+    mock_create_connection,
+    monkeypatch,
+    mock_db_url,
+    mock_reset_applicants_table,
+    fake_pull_records,
+):
+    mock_reset_applicants_table()
     app = create_app(
         {
             "TESTING": True,
-            "DATABASE_URL": db_url,
+            "DATABASE_URL": mock_db_url,
             "RUN_PULL_IN_BACKGROUND": False,
-            "PULL_RUNNER": _build_pull_runner(db_url),
+            "PULL_RUNNER": _build_pull_runner(mock_db_url, fake_pull_records),
         }
     )
 
-    monkeypatch.setattr(dashboard, "load_query_results", lambda: _analysis_results_from_db(db_url))
+    monkeypatch.setattr(dashboard, "load_query_results", lambda: _analysis_results_from_db(mock_db_url))
 
     with app.test_client() as client:
         pull_resp = client.post("/pull-data")
@@ -168,15 +129,19 @@ def test_end_to_end_pull_update_render(db_ready, monkeypatch, db_url):
     assert "50.00%" in html
 
 
-@pytest.mark.integration
-def test_multiple_pulls_with_overlapping_data_remain_consistent(db_ready, db_url):
-    _reset_table(db_url)
+def test_multiple_pulls_with_overlapping_data_remain_consistent(
+    mock_create_connection,
+    mock_db_url,
+    mock_reset_applicants_table,
+    fake_pull_records,
+):
+    mock_reset_applicants_table()
     app = create_app(
         {
             "TESTING": True,
-            "DATABASE_URL": db_url,
+            "DATABASE_URL": mock_db_url,
             "RUN_PULL_IN_BACKGROUND": False,
-            "PULL_RUNNER": _build_pull_runner(db_url),
+            "PULL_RUNNER": _build_pull_runner(mock_db_url, fake_pull_records),
         }
     )
 
@@ -187,7 +152,7 @@ def test_multiple_pulls_with_overlapping_data_remain_consistent(db_ready, db_url
     assert first.status_code == 200
     assert second.status_code == 200
 
-    conn = dashboard.create_connection(database_url=db_url)
+    conn = dashboard.create_connection(database_url=mock_db_url)
     try:
         count = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
     finally:

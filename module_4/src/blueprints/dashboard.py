@@ -43,11 +43,11 @@ pull_status_state = {
 
 # Default database settings used by the dashboard and pull job.
 DB_CONFIG = {
-    "db_name": os.getenv("DB_NAME", "postgres"),
-    "db_user": os.getenv("DB_USER", "postgres"),
-    "db_password": os.getenv("DB_PASSWORD", "postgres"),
-    "db_host": os.getenv("DB_HOST", "localhost"),
-    "db_port": os.getenv("DB_PORT", "5432"),
+    "db_name": os.getenv("DB_NAME"),
+    "db_user": os.getenv("DB_USER"),
+    "db_password": os.getenv("DB_PASSWORD"),
+    "db_host": os.getenv("DB_HOST"),
+    "db_port": os.getenv("DB_PORT"),
 }
 
 
@@ -72,13 +72,29 @@ def create_connection(
         if conninfo:
             return psycopg.connect(conninfo)
 
-        return psycopg.connect(
-            dbname=db_name or DB_CONFIG["db_name"],
-            user=db_user or DB_CONFIG["db_user"],
-            password=db_password or DB_CONFIG["db_password"],
-            host=db_host or DB_CONFIG["db_host"],
-            port=db_port or DB_CONFIG["db_port"],
-        )
+        resolved = {
+            "dbname": db_name or DB_CONFIG["db_name"],
+            "user": db_user or DB_CONFIG["db_user"],
+            "password": db_password or DB_CONFIG["db_password"],
+            "host": db_host or DB_CONFIG["db_host"],
+            "port": db_port or DB_CONFIG["db_port"],
+        }
+        key_to_env = {
+            "dbname": "DB_NAME",
+            "user": "DB_USER",
+            "password": "DB_PASSWORD",
+            "host": "DB_HOST",
+            "port": "DB_PORT",
+        }
+        missing = [key_to_env[key] for key, value in resolved.items() if not value]
+        if missing:
+            missing_text = ", ".join(missing)
+            raise RuntimeError(
+                "Database configuration is missing. Set DATABASE_URL or DB_NAME/DB_USER/DB_PASSWORD/DB_HOST/DB_PORT. "
+                f"Missing: {missing_text}"
+            )
+
+        return psycopg.connect(**resolved)
     except OperationalError as exc:
         raise RuntimeError(f"Database connection failed: {exc}") from exc
 

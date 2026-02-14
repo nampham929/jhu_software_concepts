@@ -1,6 +1,7 @@
 import psycopg
 from psycopg import OperationalError
 import json
+import os
 
 # Create a connection to PostgreSQL database
 def create_connection(db_name, db_user, db_password, db_host, db_port):
@@ -173,19 +174,38 @@ def load_data_from_jsonl(connection, jsonl_file):
 
 def main():
     """Main function to orchestrate the data loading process."""
-    # Database configuration - replace with your actual credentials
-    db_name = "postgres"
-    db_user = "postgres"
-    db_password = "dataBase!605"
-    db_host = "localhost"
-    db_port = "5432"
+    database_url = os.getenv("DATABASE_URL")
+    db_name = os.getenv("DB_NAME")
+    db_user = os.getenv("DB_USER")
+    db_password = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT")
     
     # Path to the JSONL file
     jsonl_file = "llm_extend_applicant_data.jsonl"
     
     try:
         # Create connection
-        conn = create_connection(db_name, db_user, db_password, db_host, db_port)
+        if database_url:
+            conn = psycopg.connect(database_url)
+        else:
+            missing = [
+                name
+                for name, value in {
+                    "DB_NAME": db_name,
+                    "DB_USER": db_user,
+                    "DB_PASSWORD": db_password,
+                    "DB_HOST": db_host,
+                    "DB_PORT": db_port,
+                }.items()
+                if not value
+            ]
+            if missing:
+                raise RuntimeError(
+                    "Database configuration missing. Set DATABASE_URL or DB_NAME/DB_USER/DB_PASSWORD/DB_HOST/DB_PORT. "
+                    f"Missing: {', '.join(missing)}"
+                )
+            conn = create_connection(db_name, db_user, db_password, db_host, db_port)
         
         # Create table
         create_applicants_table(conn)

@@ -1,5 +1,6 @@
 import psycopg
 from psycopg import OperationalError
+import os
 
 '''
 Set of queries to run on the applicants table, 
@@ -292,14 +293,34 @@ def run_query(
 
 # Database configuration
 def main():
-    db_name = "postgres"
-    db_user = "postgres"
-    db_password = "dataBase!605"
-    db_host = "localhost"
-    db_port = "5432"
+    database_url = os.getenv("DATABASE_URL")
+    db_name = os.getenv("DB_NAME")
+    db_user = os.getenv("DB_USER")
+    db_password = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT")
 
     try:
-        conn = create_connection(db_name, db_user, db_password, db_host, db_port)
+        if database_url:
+            conn = psycopg.connect(database_url)
+        else:
+            missing = [
+                name
+                for name, value in {
+                    "DB_NAME": db_name,
+                    "DB_USER": db_user,
+                    "DB_PASSWORD": db_password,
+                    "DB_HOST": db_host,
+                    "DB_PORT": db_port,
+                }.items()
+                if not value
+            ]
+            if missing:
+                raise RuntimeError(
+                    "Database configuration missing. Set DATABASE_URL or DB_NAME/DB_USER/DB_PASSWORD/DB_HOST/DB_PORT. "
+                    f"Missing: {', '.join(missing)}"
+                )
+            conn = create_connection(db_name, db_user, db_password, db_host, db_port)
 
         queries = get_queries()
         for query in queries:

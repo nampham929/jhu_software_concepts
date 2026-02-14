@@ -187,8 +187,10 @@ def test_run_pull_job_branches_and_failure(monkeypatch):
     assert dashboard._get_pull_in_progress() is False
 
 
-@pytest.mark.buttons
+@pytest.mark.db
 def test_create_connection_uses_db_config_and_error(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    dashboard.APP_SETTINGS["DATABASE_URL"] = None
     class DummyOpErr(Exception):
         pass
 
@@ -260,3 +262,71 @@ def test_fetch_applicant_row_by_url_none_branch():
             return Cursor()
 
     assert dashboard.fetch_applicant_row_by_url(Conn(), "x") is None
+
+
+@pytest.mark.buttons
+def test_fetch_applicant_row_by_url_success_branch():
+    row = (
+        "Computer Science, Johns Hopkins University",
+        "c",
+        "2026-02-10",
+        "https://example.test/ok",
+        "Accepted",
+        "Fall 2026",
+        "American",
+        3.9,
+        330.0,
+        165.0,
+        4.5,
+        "Masters",
+        "Computer Science",
+        "Johns Hopkins University",
+    )
+
+    class Cursor:
+        def fetchone(self):
+            return row
+
+    class Conn:
+        def execute(self, *args, **kwargs):
+            return Cursor()
+
+    result = dashboard.fetch_applicant_row_by_url(Conn(), "https://example.test/ok")
+    assert result is not None
+    assert result["url"] == "https://example.test/ok"
+    assert result["status"] == "Accepted"
+    assert result["llm_generated_university"] == "Johns Hopkins University"
+
+
+@pytest.mark.db
+def test_create_connection_missing_config_raises_runtime(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    dashboard.APP_SETTINGS["DATABASE_URL"] = None
+    with pytest.raises(RuntimeError):
+        dashboard.create_connection(
+            db_name=None,
+            db_user=None,
+            db_password=None,
+            db_host=None,
+            db_port=None,
+            database_url=None,
+        )
+
+
+@pytest.mark.db
+def test_create_connection_conninfo_and_operational_error(monkeypatch):
+    monkeypatch.setattr(dashboard.psycopg, "connect", lambda conninfo: object())
+    conn = dashboard.create_connection(database_url="postgresql://test-user:test-pass@localhost:5432/testdb")
+    assert conn is not None
+
+    class DummyOpErr(Exception):
+        pass
+
+    monkeypatch.setattr(dashboard, "OperationalError", DummyOpErr)
+
+    def _raise(conninfo):
+        raise DummyOpErr("cannot connect")
+
+    monkeypatch.setattr(dashboard.psycopg, "connect", _raise)
+    with pytest.raises(RuntimeError, match="Database connection failed"):
+        dashboard.create_connection(database_url="postgresql://test-user:test-pass@localhost:5432/testdb")

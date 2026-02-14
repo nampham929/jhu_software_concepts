@@ -22,7 +22,7 @@
         <h2>Pull Data</h2>
         <p>Fetches GradCafe survey pages starting after the last page pulled and appends any new entries to the database.</p>
       </div>
-      <form action="{{ url_for('dashboard.pull_data') }}" method="post">
+      <form id="pull-data-form" action="{{ url_for('dashboard.pull_data') }}" method="post">
         <button data-testid="pull-data-btn" id="pull-data-button" type="submit" class="pull-button" {% if pull_in_progress %}disabled aria-disabled="true"{% endif %}>
           Pull Data
         </button>
@@ -42,7 +42,7 @@
         <p>Refreshes the dashboard so the latest database updates are reflected in the results.</p>
       </div>
       <div class="update-actions">
-        <form action="{{ url_for('dashboard.update_analysis') }}" method="post">
+        <form id="update-analysis-form" action="{{ url_for('dashboard.update_analysis') }}" method="post">
           <button data-testid="update-analysis-btn" id="update-analysis-button" type="submit" class="pull-button" {% if pull_in_progress %}disabled aria-disabled="true"{% endif %}>
             Update Analysis
           </button>
@@ -107,6 +107,9 @@
     const pullStatusMessage = document.getElementById('pull-status-message');
     const pullStatusCounts = document.getElementById('pull-status-counts');
     const pullStateJson = document.getElementById('pull-state');
+    const pullDataForm = document.getElementById('pull-data-form');
+    const updateAnalysisForm = document.getElementById('update-analysis-form');
+    const pullDataButton = document.getElementById('pull-data-button');
     const updateAnalysisButton = document.getElementById('update-analysis-button');
     const updateAnalysisNote = document.getElementById('update-analysis-note');
 
@@ -169,6 +172,35 @@
       }
     }
 
+    async function postAction(formEl) {
+      if (!formEl) return;
+      try {
+        const response = await fetch(formEl.action, { method: 'POST' });
+        const payload = await response.json();
+        if (pullStatusMessage && payload.message) {
+          pullStatusMessage.textContent = payload.message;
+        }
+        if (response.status === 409) {
+          updateAnalysisAvailability(true);
+          return;
+        }
+        if (formEl === pullDataForm && pullDataButton) {
+          pullDataButton.setAttribute('disabled', '');
+          pullDataButton.setAttribute('aria-disabled', 'true');
+        }
+        if (payload.pull_state && payload.pull_state.progress) {
+          renderCounts(payload.pull_state.progress);
+        }
+        if (formEl === updateAnalysisForm && response.ok) {
+          window.location.reload();
+        }
+      } catch (error) {
+        if (pullStatusMessage) {
+          pullStatusMessage.textContent = 'Request failed. Please try again.';
+        }
+      }
+    }
+
     if (pullStateJson) {
       try {
         renderCounts(JSON.parse(pullStateJson.textContent));
@@ -178,6 +210,18 @@
     }
     const initialPullRunning = document.body.dataset.pullRunning === 'true';
     updateAnalysisAvailability(initialPullRunning);
+    if (pullDataForm) {
+      pullDataForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        postAction(pullDataForm);
+      });
+    }
+    if (updateAnalysisForm) {
+      updateAnalysisForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        postAction(updateAnalysisForm);
+      });
+    }
     setInterval(pollPullStatus, 2000);
   </script>
 </body>

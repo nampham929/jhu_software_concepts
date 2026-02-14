@@ -48,22 +48,18 @@ class _LoadConn:
         self.rollback_count += 1
 
 
-def _reset_table(db_url: str) -> None:
-    conn = dashboard.create_connection(database_url=db_url)
-    try:
-        create_applicants_table(conn)
-        conn.execute("TRUNCATE TABLE applicants;")
-        conn.commit()
-    finally:
-        conn.close()
-
-
-@pytest.mark.db
-def test_insert_on_pull_writes_required_schema_rows(db_ready, db_url):
-    _reset_table(db_url)
+def test_insert_on_pull_writes_required_schema_rows(
+    mock_create_connection,
+    mock_db_connection,
+    mock_db_url,
+    mock_reset_applicants_table,
+    fake_applicant_row,
+    insert_row_tuple,
+):
+    mock_reset_applicants_table()
 
     def fake_pull_runner(progress_callback=None):
-        conn = dashboard.create_connection(database_url=db_url)
+        conn = dashboard.create_connection(database_url=mock_db_url)
         try:
             create_applicants_table(conn)
             conn.execute(
@@ -74,22 +70,7 @@ def test_insert_on_pull_writes_required_schema_rows(db_ready, db_url):
                     degree, llm_generated_program, llm_generated_university
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (
-                    "Computer Science, Johns Hopkins University",
-                    "test row",
-                    "2026-02-10",
-                    "https://example.test/row-1",
-                    "Accepted",
-                    "Fall 2026",
-                    "American",
-                    3.9,
-                    330,
-                    165,
-                    4.5,
-                    "Masters",
-                    "Computer Science",
-                    "Johns Hopkins University",
-                ),
+                insert_row_tuple(fake_applicant_row),
             )
             conn.commit()
         finally:
@@ -109,13 +90,13 @@ def test_insert_on_pull_writes_required_schema_rows(db_ready, db_url):
     app = create_app(
         {
             "TESTING": True,
-            "DATABASE_URL": db_url,
+            "DATABASE_URL": mock_db_url,
             "RUN_PULL_IN_BACKGROUND": False,
             "PULL_RUNNER": fake_pull_runner,
         }
     )
 
-    conn = dashboard.create_connection(database_url=db_url)
+    conn = dashboard.create_connection(database_url=mock_db_url)
     try:
         before_count = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
     finally:
@@ -127,7 +108,7 @@ def test_insert_on_pull_writes_required_schema_rows(db_ready, db_url):
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
 
-    conn = dashboard.create_connection(database_url=db_url)
+    conn = dashboard.create_connection(database_url=mock_db_url)
     try:
         after_count = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
         row = conn.execute(
@@ -150,26 +131,18 @@ def test_insert_on_pull_writes_required_schema_rows(db_ready, db_url):
         assert value is not None
 
 
-@pytest.mark.db
-def test_idempotency_duplicate_pull_does_not_duplicate_rows(db_ready, db_url):
-    _reset_table(db_url)
-
-    entry = {
-        "program": "Computer Science, Johns Hopkins University",
-        "comments": "idempotency test",
-        "date_added": "February 10, 2026",
-        "url": "https://example.test/unique-row",
-        "status": "Accepted",
-        "term": "Fall 2026",
-        "US/International": "American",
-        "GPA": "3.95",
-        "GRE_SCORE": "330",
-        "GRE_V": "165",
-        "GRE_AW": "4.5",
-        "Degree": "Masters",
-        "llm-generated-program": "Computer Science",
-        "llm-generated-university": "Johns Hopkins University",
-    }
+def test_idempotency_duplicate_pull_does_not_duplicate_rows(
+    mock_create_connection,
+    mock_db_connection,
+    mock_db_url,
+    mock_reset_applicants_table,
+    fake_applicant_row,
+):
+    mock_reset_applicants_table()
+    entry = dict(fake_applicant_row)
+    entry["comments"] = "idempotency test"
+    entry["url"] = "https://example.test/unique-row"
+    entry["GPA"] = "3.95"
 
     fake_scraper = SimpleNamespace(
         BASE_URL="https://fake.local/survey",
@@ -177,7 +150,7 @@ def test_idempotency_duplicate_pull_does_not_duplicate_rows(db_ready, db_url):
         _parse_page=lambda html: [entry] if dashboard._extract_page_number(html) == 1 else [],
     )
     fake_clean = SimpleNamespace(clean_data=lambda rows: rows)
-    connection_factory = lambda: dashboard.create_connection(database_url=db_url)
+    connection_factory = lambda: dashboard.create_connection(database_url=mock_db_url)
 
     summary_1 = dashboard.pull_gradcafe_data(
         scraper_module=fake_scraper,
@@ -190,7 +163,7 @@ def test_idempotency_duplicate_pull_does_not_duplicate_rows(db_ready, db_url):
         connection_factory=connection_factory,
     )
 
-    conn = dashboard.create_connection(database_url=db_url)
+    conn = dashboard.create_connection(database_url=mock_db_url)
     try:
         total_rows = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
     finally:
@@ -201,11 +174,23 @@ def test_idempotency_duplicate_pull_does_not_duplicate_rows(db_ready, db_url):
     assert total_rows == 1
 
 
-@pytest.mark.db
-def test_simple_query_function_returns_expected_schema_keys(db_ready, db_url):
-    _reset_table(db_url)
+def test_simple_query_function_returns_expected_schema_keys(
+    mock_create_connection,
+    mock_db_url,
+    mock_reset_applicants_table,
+    fake_applicant_row,
+    insert_row_tuple,
+):
+    mock_reset_applicants_table()
+    entry = dict(fake_applicant_row)
+    entry["comments"] = "query test"
+    entry["url"] = "https://example.test/query-row"
+    entry["GPA"] = "3.8"
+    entry["GRE_SCORE"] = "328"
+    entry["GRE_V"] = "162"
+    entry["GRE_AW"] = "4.0"
 
-    conn = dashboard.create_connection(database_url=db_url)
+    conn = dashboard.create_connection(database_url=mock_db_url)
     try:
         conn.execute(
             """
@@ -215,22 +200,7 @@ def test_simple_query_function_returns_expected_schema_keys(db_ready, db_url):
                 degree, llm_generated_program, llm_generated_university
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (
-                "Computer Science, Johns Hopkins University",
-                "query test",
-                "2026-02-10",
-                "https://example.test/query-row",
-                "Accepted",
-                "Fall 2026",
-                "American",
-                3.8,
-                328,
-                162,
-                4.0,
-                "Masters",
-                "Computer Science",
-                "Johns Hopkins University",
-            ),
+            insert_row_tuple(entry),
         )
         conn.commit()
 
@@ -335,6 +305,12 @@ def test_load_data_from_jsonl_success_and_error_paths(tmp_path):
 
 @pytest.mark.db
 def test_load_data_main_success_and_failure(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DB_NAME", "d")
+    monkeypatch.setenv("DB_USER", "u")
+    monkeypatch.setenv("DB_PASSWORD", "p")
+    monkeypatch.setenv("DB_HOST", "h")
+    monkeypatch.setenv("DB_PORT", "9")
     class _MainConn:
         def __init__(self):
             self.closed = False
@@ -558,7 +534,7 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
     fake_scrape = SimpleNamespace(
         BASE_URL="https://fake.local/survey",
         _fetch_html=lambda url: url,
-        _parse_page=lambda html: rows if "page=1" in html else [],
+        _parse_page=lambda html: rows if dashboard._extract_page_number(html) == 1 else [],
     )
     fake_clean = SimpleNamespace(clean_data=lambda data: data)
 
@@ -622,3 +598,35 @@ def test_load_data_skips_blank_line_explicitly(tmp_path):
     conn = _LoadConn()
     load_data.load_data_from_jsonl(conn, str(jsonl_path))
     assert len(conn.executed) == 2
+
+
+@pytest.mark.db
+def test_load_data_main_uses_database_url(monkeypatch):
+    class _Conn:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    conn = _Conn()
+    monkeypatch.setenv("DATABASE_URL", "postgresql://db.example.invalid:5432/dbname")
+    monkeypatch.setattr(load_data.psycopg, "connect", lambda url: conn)
+    monkeypatch.setattr(load_data, "create_applicants_table", lambda c: None)
+    monkeypatch.setattr(load_data, "load_data_from_jsonl", lambda c, p: None)
+    load_data.main()
+    assert conn.closed is True
+
+
+@pytest.mark.db
+def test_load_data_main_missing_env_hits_runtime_branch(monkeypatch, capsys):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DB_NAME", raising=False)
+    monkeypatch.delenv("DB_USER", raising=False)
+    monkeypatch.delenv("DB_PASSWORD", raising=False)
+    monkeypatch.delenv("DB_HOST", raising=False)
+    monkeypatch.delenv("DB_PORT", raising=False)
+
+    load_data.main()
+    out = capsys.readouterr().out
+    assert "Failed to complete data loading: Database configuration missing." in out

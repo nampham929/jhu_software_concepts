@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from flask import Flask
+from dotenv import load_dotenv
 
 from blueprints.dashboard import configure_dashboard, dashboard_bp
 
+
+# Load local env vars from project root for local development.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # Create the Flask application and register the dashboard blueprint.
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
@@ -28,6 +33,3 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
 if __name__ == "__main__":  # pragma: no cover
     create_app().run(debug=True)
-
-
-

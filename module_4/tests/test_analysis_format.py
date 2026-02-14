@@ -131,6 +131,12 @@ def test_run_query_success_and_error_paths(monkeypatch, capsys):
 
 @pytest.mark.analysis
 def test_query_data_main_success_and_failure(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DB_NAME", "d")
+    monkeypatch.setenv("DB_USER", "u")
+    monkeypatch.setenv("DB_PASSWORD", "p")
+    monkeypatch.setenv("DB_HOST", "h")
+    monkeypatch.setenv("DB_PORT", "9")
     class _Conn:
         def __init__(self):
             self.closed = False
@@ -154,8 +160,20 @@ def test_query_data_main_success_and_failure(monkeypatch):
     monkeypatch.setattr(query_data, "create_connection", _raise)
     query_data.main()
 
+
 @pytest.mark.analysis
-def test_query_data_get_queries_and_run_query_modes(monkeypatch):
+def test_query_data_main_missing_env_prints_failure(monkeypatch, capsys):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DB_NAME", raising=False)
+    monkeypatch.delenv("DB_USER", raising=False)
+    monkeypatch.delenv("DB_PASSWORD", raising=False)
+    monkeypatch.delenv("DB_HOST", raising=False)
+    monkeypatch.delenv("DB_PORT", raising=False)
+    query_data.main()
+    assert "Database configuration missing" in capsys.readouterr().out
+
+@pytest.mark.analysis
+def test_query_data_get_queries_and_run_query_modes():
     queries = query_data.get_queries()
     assert len(queries) >= 1
 
@@ -319,3 +337,20 @@ def test_module2_run_main_imported_as_package(monkeypatch):
 
     run_mod.main()
 
+
+
+@pytest.mark.analysis
+def test_query_data_main_uses_database_url(monkeypatch):
+    class _Conn:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    conn = _Conn()
+    monkeypatch.setenv("DATABASE_URL", "postgresql://db.example.invalid:5432/dbname")
+    monkeypatch.setattr(query_data.psycopg, "connect", lambda url: conn)
+    monkeypatch.setattr(query_data, "get_queries", lambda: [])
+    query_data.main()
+    assert conn.closed is True
