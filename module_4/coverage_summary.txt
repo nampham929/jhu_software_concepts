@@ -1,0 +1,20 @@
+Pytest Coverage Summary
+======================
+
+Command:
+pytest --cov=src --cov-report=term-missing
+
+Results:
+- 49 passed
+- Total coverage: 100.00% (588 statements, 0 missed)
+- Required coverage threshold met: 100%
+
+Per-file coverage:
+- src/blueprints/dashboard.py: 100%
+- src/flask_app.py: 100%
+- src/load_data.py: 100%
+- src/module_2/__init__.py: 100%
+- src/module_2/clean.py: 100%
+- src/module_2/run.py: 100%
+- src/module_2/scrape.py: 100%
+- src/query_data.py: 100%

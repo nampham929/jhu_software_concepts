@@ -48,6 +48,7 @@ class _LoadConn:
         self.rollback_count += 1
 
 
+@pytest.mark.db
 def test_insert_on_pull_writes_required_schema_rows(
     mock_create_connection,
     mock_db_connection,
@@ -131,6 +132,7 @@ def test_insert_on_pull_writes_required_schema_rows(
         assert value is not None
 
 
+@pytest.mark.db
 def test_idempotency_duplicate_pull_does_not_duplicate_rows(
     mock_create_connection,
     mock_db_connection,
@@ -174,6 +176,7 @@ def test_idempotency_duplicate_pull_does_not_duplicate_rows(
     assert total_rows == 1
 
 
+@pytest.mark.db
 def test_simple_query_function_returns_expected_schema_keys(
     mock_create_connection,
     mock_db_url,
@@ -630,3 +633,4 @@ def test_load_data_main_missing_env_hits_runtime_branch(monkeypatch, capsys):
     load_data.main()
     out = capsys.readouterr().out
     assert "Failed to complete data loading: Database configuration missing." in out
+

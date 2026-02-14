@@ -93,6 +93,7 @@ def _analysis_results_from_db(db_url: str):
     ]
 
 
+@pytest.mark.integration
 def test_end_to_end_pull_update_render(
     mock_create_connection,
     monkeypatch,
@@ -129,6 +130,7 @@ def test_end_to_end_pull_update_render(
     assert "50.00%" in html
 
 
+@pytest.mark.integration
 def test_multiple_pulls_with_overlapping_data_remain_consistent(
     mock_create_connection,
     mock_db_url,
@@ -159,4 +161,5 @@ def test_multiple_pulls_with_overlapping_data_remain_consistent(
         conn.close()
 
     assert count == 2
+
 
