@@ -101,6 +101,7 @@ def test_end_to_end_pull_update_render(
     mock_reset_applicants_table,
     fake_pull_records,
 ):
+    # Validate full flow: pull data, refresh analysis, and render analysis page output.
     mock_reset_applicants_table()
     app = create_app(
         {
@@ -137,6 +138,7 @@ def test_multiple_pulls_with_overlapping_data_remain_consistent(
     mock_reset_applicants_table,
     fake_pull_records,
 ):
+    # Ensure repeated pulls with overlapping URLs do not create duplicate DB rows.
     mock_reset_applicants_table()
     app = create_app(
         {

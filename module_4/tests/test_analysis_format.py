@@ -33,6 +33,7 @@ class _FakeConnection:
 
 @pytest.mark.analysis
 def test_answer_labels_rendered_in_analysis_page(monkeypatch):
+    # Ensure the analysis page renders an explicit "Answer:" label for query results.
     monkeypatch.setattr(
         dashboard,
         "load_query_results",
@@ -61,6 +62,7 @@ def test_answer_labels_rendered_in_analysis_page(monkeypatch):
 
 @pytest.mark.analysis
 def test_percentage_always_two_decimals():
+    # Verify percent formatting normalizes to two decimal places, including None input.
     formatted = query_data.format_display([[39.2]], "percent")
     assert formatted == "39.20%"
 
@@ -72,6 +74,7 @@ def test_percentage_always_two_decimals():
 
 @pytest.mark.analysis
 def test_query_data_create_connection_success(monkeypatch):
+    # Confirm create_connection returns the psycopg connection object on success.
     fake_conn = object()
     monkeypatch.setattr(query_data.psycopg, "connect", lambda **kwargs: fake_conn)
     conn = query_data.create_connection("d", "u", "p", "h", "5432")
@@ -80,6 +83,7 @@ def test_query_data_create_connection_success(monkeypatch):
 
 @pytest.mark.analysis
 def test_query_data_create_connection_failure(monkeypatch):
+    # Confirm OperationalError is propagated when psycopg.connect fails.
     def _raise(**kwargs):
         raise query_data.OperationalError("boom")
 
@@ -90,6 +94,7 @@ def test_query_data_create_connection_failure(monkeypatch):
 
 @pytest.mark.analysis
 def test_execute_query_returns_rows_and_columns():
+    # Validate execute_query returns both row data and column names from cursor metadata.
     conn = _FakeConnection(rows=[(1, 2)], columns=["a", "b"])
     rows, columns = query_data.execute_query(conn, "SELECT 1", ())
     assert rows == [(1, 2)]
@@ -98,6 +103,7 @@ def test_execute_query_returns_rows_and_columns():
 
 @pytest.mark.analysis
 def test_format_display_all_modes():
+    # Cover each supported display mode and the unknown-mode fallback.
     assert query_data.format_display([], "number") is None
     assert query_data.format_display([[42]], "number") == "42"
     assert query_data.format_display([[39.2]], "percent") == "39.20%"
@@ -109,6 +115,7 @@ def test_format_display_all_modes():
 
 @pytest.mark.analysis
 def test_run_query_success_and_error_paths(monkeypatch, capsys):
+    # Validate both normal query execution and error-path behavior with log output.
     conn = _FakeConnection(rows=[(50.0,)], columns=["pct"])
     result = query_data.run_query(
         conn,
@@ -131,6 +138,7 @@ def test_run_query_success_and_error_paths(monkeypatch, capsys):
 
 @pytest.mark.analysis
 def test_query_data_main_success_and_failure(monkeypatch):
+    # Exercise main() when connection succeeds and when setup raises an exception.
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("DB_NAME", "d")
     monkeypatch.setenv("DB_USER", "u")
@@ -163,6 +171,7 @@ def test_query_data_main_success_and_failure(monkeypatch):
 
 @pytest.mark.analysis
 def test_query_data_main_missing_env_prints_failure(monkeypatch, capsys):
+    # Ensure missing DB environment variables trigger the expected failure message.
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("DB_NAME", raising=False)
     monkeypatch.delenv("DB_USER", raising=False)
@@ -174,6 +183,7 @@ def test_query_data_main_missing_env_prints_failure(monkeypatch, capsys):
 
 @pytest.mark.analysis
 def test_query_data_get_queries_and_run_query_modes():
+    # Validate query catalog availability and run_query mode flags for number/pair paths.
     queries = query_data.get_queries()
     assert len(queries) >= 1
 
@@ -187,6 +197,7 @@ def test_query_data_get_queries_and_run_query_modes():
 
 @pytest.mark.analysis
 def test_module2_clean_load_clean_save(tmp_path):
+    # Verify module_2 clean pipeline loads, transforms, and saves sanitized JSON data.
     import module_2.clean as clean_mod
 
     input_path = tmp_path / "in.json"
@@ -206,6 +217,7 @@ def test_module2_clean_load_clean_save(tmp_path):
 
 @pytest.mark.analysis
 def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
+    # Exercise scrape helpers with mocked network/robots to keep test fully offline.
     import module_2.scrape as scrape_mod
 
     class FakeRP:
@@ -266,6 +278,7 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
 
 @pytest.mark.analysis
 def test_query_data_run_query_labels_branch():
+    # Cover run_query path that returns numeric tuples with provided labels.
     conn = _FakeConnection(rows=[(3.9, 330)], columns=["gpa", "gre"])
     result = query_data.run_query(
         conn,
@@ -280,6 +293,7 @@ def test_query_data_run_query_labels_branch():
 
 @pytest.mark.analysis
 def test_module2_scrape_disallowed_and_rejected_branches(monkeypatch):
+    # Cover robots disallow handling and rejected-row parsing branch.
     import module_2.scrape as scrape_mod
 
     class FakeRP:
@@ -318,6 +332,7 @@ def test_module2_scrape_disallowed_and_rejected_branches(monkeypatch):
 
 @pytest.mark.analysis
 def test_module2_run_main_imported_as_package(monkeypatch):
+    # Validate module_2.run.main works when imported as a package with patched dependencies.
     import importlib
     import module_2.clean as clean_mod
     import module_2.scrape as scrape_mod
@@ -341,6 +356,7 @@ def test_module2_run_main_imported_as_package(monkeypatch):
 
 @pytest.mark.analysis
 def test_query_data_main_uses_database_url(monkeypatch):
+    # Ensure main() prefers DATABASE_URL direct connection path when provided.
     class _Conn:
         def __init__(self):
             self.closed = False

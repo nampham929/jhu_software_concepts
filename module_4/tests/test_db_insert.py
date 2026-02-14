@@ -57,6 +57,7 @@ def test_insert_on_pull_writes_required_schema_rows(
     fake_applicant_row,
     insert_row_tuple,
 ):
+    # Ensure a pull inserts at least one row and populates all required schema columns.
     mock_reset_applicants_table()
 
     def fake_pull_runner(progress_callback=None):
@@ -140,6 +141,7 @@ def test_idempotency_duplicate_pull_does_not_duplicate_rows(
     mock_reset_applicants_table,
     fake_applicant_row,
 ):
+    # Ensure repeated pulls of the same source data do not create duplicate inserts.
     mock_reset_applicants_table()
     entry = dict(fake_applicant_row)
     entry["comments"] = "idempotency test"
@@ -184,6 +186,7 @@ def test_simple_query_function_returns_expected_schema_keys(
     fake_applicant_row,
     insert_row_tuple,
 ):
+    # Ensure fetch-by-URL returns a dictionary with the expected applicant schema keys.
     mock_reset_applicants_table()
     entry = dict(fake_applicant_row)
     entry["comments"] = "query test"
@@ -220,6 +223,7 @@ def test_simple_query_function_returns_expected_schema_keys(
 
 @pytest.mark.db
 def test_load_data_create_connection_success_and_failure(monkeypatch):
+    # Ensure load_data.create_connection succeeds on good config and raises on connect errors.
     fake_conn = object()
     monkeypatch.setattr(load_data.psycopg, "connect", lambda **kwargs: fake_conn)
     assert load_data.create_connection("d", "u", "p", "h", "5432") is fake_conn
@@ -234,6 +238,7 @@ def test_load_data_create_connection_success_and_failure(monkeypatch):
 
 @pytest.mark.db
 def test_create_applicants_table_success_and_error():
+    # Ensure table creation commits on success and rolls back when execution fails.
     good = _LoadConn()
     load_data.create_applicants_table(good)
     assert good.commit_count == 1
@@ -246,6 +251,7 @@ def test_create_applicants_table_success_and_error():
 
 @pytest.mark.db
 def test_parse_helpers_and_detect_encoding(tmp_path):
+    # Validate parsing helpers and BOM/encoding detection across common file encodings.
     assert load_data.parse_date("January 15, 2026") == "2026-01-15"
     assert load_data.parse_date("not-a-date") is None
     assert load_data.parse_date("") is None
@@ -269,6 +275,7 @@ def test_parse_helpers_and_detect_encoding(tmp_path):
 
 @pytest.mark.db
 def test_load_data_from_jsonl_success_and_error_paths(tmp_path):
+    # Cover JSONL happy path plus malformed JSON, insert failure, and missing-file branches.
     jsonl_path = tmp_path / "rows.jsonl"
     row = {
         "program": "Computer Science, JHU",
@@ -308,6 +315,7 @@ def test_load_data_from_jsonl_success_and_error_paths(tmp_path):
 
 @pytest.mark.db
 def test_load_data_main_success_and_failure(monkeypatch):
+    # Ensure load_data.main handles both successful setup and top-level failure path.
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("DB_NAME", "d")
     monkeypatch.setenv("DB_USER", "u")
@@ -336,6 +344,7 @@ def test_load_data_main_success_and_failure(monkeypatch):
 
 @pytest.mark.db
 def test_load_data_empty_line_commit_100_and_outer_exception(tmp_path, monkeypatch):
+    # Ensure batch commits occur and outer exceptions from encoding detection are propagated.
     jsonl_path = tmp_path / "bulk.jsonl"
     row = {
         "program": "P",
@@ -367,6 +376,7 @@ def test_load_data_empty_line_commit_100_and_outer_exception(tmp_path, monkeypat
 
 @pytest.mark.db
 def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatch):
+    # Cover stop-URL short-circuit logic and default module_2 import wiring.
     import types
     import sys
 
@@ -445,6 +455,7 @@ def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatc
 
 @pytest.mark.db
 def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
+    # Cover insert, duplicate, missing-url, error, progress, commit, and rollback branches.
     class _Cursor:
         def __init__(self, rows=None, row=None):
             self._rows = rows or []
@@ -561,6 +572,7 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
 
 @pytest.mark.db
 def test_ensure_module_2_on_path_adds_path_once():
+    # Ensure module_2 path helper is idempotent across repeated calls.
     module_root = dashboard._ensure_module_2_on_path()
     assert module_root in dashboard.sys.path
     module_root_2 = dashboard._ensure_module_2_on_path()
@@ -568,6 +580,7 @@ def test_ensure_module_2_on_path_adds_path_once():
 
 @pytest.mark.db
 def test_ensure_module_2_on_path_insertion_branch(monkeypatch):
+    # Ensure module_2 path helper inserts the module root when missing from sys.path.
     module_root = dashboard.os.path.abspath(
         dashboard.os.path.join(dashboard.os.path.dirname(dashboard.__file__), "..")
     )
@@ -579,6 +592,7 @@ def test_ensure_module_2_on_path_insertion_branch(monkeypatch):
 
 @pytest.mark.db
 def test_load_data_skips_blank_line_explicitly(tmp_path):
+    # Ensure blank lines in JSONL input are skipped without affecting valid inserts.
     jsonl_path = tmp_path / "blank_line.jsonl"
     row = {
         "program": "P",
@@ -605,6 +619,7 @@ def test_load_data_skips_blank_line_explicitly(tmp_path):
 
 @pytest.mark.db
 def test_load_data_main_uses_database_url(monkeypatch):
+    # Ensure load_data.main prefers DATABASE_URL when that environment variable is set.
     class _Conn:
         def __init__(self):
             self.closed = False
@@ -623,6 +638,7 @@ def test_load_data_main_uses_database_url(monkeypatch):
 
 @pytest.mark.db
 def test_load_data_main_missing_env_hits_runtime_branch(monkeypatch, capsys):
+    # Ensure missing DB env vars hit the runtime failure branch with expected output text.
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("DB_NAME", raising=False)
     monkeypatch.delenv("DB_USER", raising=False)

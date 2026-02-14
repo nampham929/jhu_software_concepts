@@ -9,6 +9,7 @@ from flask_app import create_app
 
 @pytest.mark.web
 def test_app_factory_and_required_routes(monkeypatch):
+    # Ensure app factory registers all core routes required by the assignment.
     # Avoid DB/query dependencies in this route registration smoke test.
     monkeypatch.setattr(
         dashboard,
@@ -40,6 +41,7 @@ def test_app_factory_and_required_routes(monkeypatch):
 
 @pytest.mark.web
 def test_get_analysis_page_loads_and_renders_required_components(monkeypatch):
+    # Ensure /analysis renders successfully with required controls and answer text.
     # Mock analysis data so the page can render deterministically in test.
     monkeypatch.setattr(
         dashboard,

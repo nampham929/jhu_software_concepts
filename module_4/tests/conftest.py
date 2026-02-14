@@ -11,6 +11,7 @@ from load_data import create_applicants_table
 
 
 SRC_PATH = Path(__file__).resolve().parents[1] / "src"
+# Ensure tests can import application modules from `src/` without installing a package.
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
@@ -191,6 +192,7 @@ def db_ready(db_url: str) -> None:
 def reset_pull_state():
     import blueprints.dashboard as dashboard
 
+    # Prevent state leakage between tests that touch dashboard pull status.
     dashboard._set_pull_in_progress(False)
     dashboard._update_pull_status(
         message="Idle",
@@ -209,6 +211,7 @@ def reset_pull_state():
 @pytest.fixture(autouse=True)
 def block_db_in_non_db_tests(request, monkeypatch):
     marker_names = {mark.name for mark in request.node.iter_markers()}
+    # Allow real DB connections only for explicitly marked tests.
     if "db" in marker_names or "integration" in marker_names:
         return
 
@@ -222,6 +225,7 @@ def block_db_in_non_db_tests(request, monkeypatch):
             "Use monkeypatch/fakes or mark test with @pytest.mark.db."
         )
 
+    # Patch all known DB entry points so accidental live connections fail fast.
     monkeypatch.setattr(dashboard, "create_connection", _blocked_connection)
     monkeypatch.setattr(dashboard.psycopg, "connect", _blocked_connection)
     monkeypatch.setattr(load_data.psycopg, "connect", _blocked_connection)
@@ -251,6 +255,7 @@ def fake_applicant_row() -> dict:
 @pytest.fixture
 def insert_row_tuple():
     def _build(entry: dict) -> tuple:
+        # Keep this order aligned with the INSERT statement used in tests.
         return (
             entry.get("program"),
             entry.get("comments"),
@@ -276,6 +281,7 @@ def reset_applicants_table(db_url: str):
     def _reset() -> None:
         import blueprints.dashboard as dashboard
 
+        # Recreate expected schema and clear data for deterministic DB tests.
         conn = dashboard.create_connection(database_url=db_url)
         try:
             create_applicants_table(conn)
