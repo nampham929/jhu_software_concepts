@@ -19,5 +19,5 @@ This project includes:
    :maxdepth: 2
    :caption: Contents:
 
-   self
+   tests
 
