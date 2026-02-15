@@ -6,15 +6,18 @@
 Module 4 - Testing and Documentation Assignment documentation
 =============================================================
 
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
+Welcome to the Module 4 project documentation.
 
-.. automodule:: add
-   :members:
+This project includes:
 
+- A Flask dashboard application in ``src/``
+- A pytest suite in ``tests/``
+- GitHub Actions CI with PostgreSQL + pytest
+- Read the Docs publishing using Sphinx
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+
+   self
 
