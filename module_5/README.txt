@@ -13,7 +13,33 @@ How to run the program:
 -Install the required packages in the requirements.txt file
 
 How to run Pylint:
-- Inside module_5 folder in the terminal, run pylint src\*.py
+- Inside module_5 folder in the terminal, run .\.venv\Scripts\python.exe -m pylint src\*.py src\blueprints\*.py
+
+How to run pydeps:
+ - Inside module_5 folder in the terminal, run pydeps src/flask_app.py --noshow -T svg -o dependency.svg --max-bacon 2 --include-missing
+
+Least-Privilege DB User Setup:
+- SQL setup script: sql/least_privilege_setup.sql
+- SQL verification script: sql/verify_least_privilege.sql
+- This project uses a non-superuser app role for runtime access.
+
+Permissions granted to app role and why:
+- CONNECT on database: required to open a DB session.
+- USAGE on schema public: required to access objects in schema.
+- SELECT on public.applicants: required for dashboard/query reads.
+- INSERT on public.applicants: required for pull/load write paths.
+- USAGE, SELECT on public.applicants_p_id_seq: required for SERIAL PK inserts.
+
+Permissions intentionally not granted:
+- No SUPERUSER, CREATEDB, CREATEROLE, REPLICATION.
+- No DROP, ALTER, or ownership grants.
+
+Short SQL snippet (for report/PDF):
+CREATE ROLE <APP_ROLE> LOGIN PASSWORD '<APP_PASSWORD>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE <DB_NAME> TO <APP_ROLE>;
+GRANT USAGE ON SCHEMA public TO <APP_ROLE>;
+GRANT SELECT, INSERT ON TABLE public.applicants TO <APP_ROLE>;
+GRANT USAGE, SELECT ON SEQUENCE public.applicants_p_id_seq TO <APP_ROLE>;
 
 4. Known Bugs: 
 
