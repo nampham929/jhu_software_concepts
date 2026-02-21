@@ -257,7 +257,7 @@ def test_load_query_results_success_and_error(monkeypatch):
     monkeypatch.setattr(dashboard.query_data, "execute_query", raise_query)
     err = dashboard.load_query_results()
     assert err[0]["title"] == "Query Error"
-    assert "bad query" in err[0]["error"]
+    assert err[0]["error"] == "Unable to load query results."
 
 
 @pytest.mark.buttons
@@ -343,3 +343,30 @@ def test_create_connection_conninfo_and_operational_error(monkeypatch):
     monkeypatch.setattr(dashboard.psycopg, "connect", _raise)
     with pytest.raises(RuntimeError, match="Database connection failed"):
         dashboard.create_connection(database_url="postgresql://test-user:test-pass@localhost:5432/testdb")
+
+
+@pytest.mark.db
+def test_create_connection_uses_db_config_argument(monkeypatch):
+    # Ensure create_connection supports the consolidated db_config argument path.
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    dashboard.APP_SETTINGS["DATABASE_URL"] = None
+    calls = {}
+
+    def fake_connect(*args, **kwargs):
+        calls.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(dashboard.psycopg, "connect", fake_connect)
+    conn = dashboard.create_connection(
+        db_config={
+            "db_name": "d2",
+            "db_user": "u2",
+            "db_password": "p2",
+            "db_host": "h2",
+            "db_port": "5433",
+        },
+        database_url=None,
+    )
+    assert conn is not None
+    assert calls["dbname"] == "d2"
+    assert calls["user"] == "u2"

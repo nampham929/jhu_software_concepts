@@ -63,12 +63,9 @@ def configure_dashboard(settings: dict[str, Any]) -> None:
 
 # Create a connection to PostgreSQL database.
 def create_connection(
-    db_name: str | None = None,
-    db_user: str | None = None,
-    db_password: str | None = None,
-    db_host: str | None = None,
-    db_port: str | None = None,
+    db_config: dict[str, str | None] | None = None,
     database_url: str | None = None,
+    **legacy_config: str | None,
 ):
     """Create a PostgreSQL connection from URL or discrete settings."""
     conninfo = database_url or APP_SETTINGS.get("DATABASE_URL") or os.getenv("DATABASE_URL")
@@ -76,12 +73,25 @@ def create_connection(
         if conninfo:
             return psycopg.connect(conninfo)
 
+        combined_config = {
+            "db_name": None,
+            "db_user": None,
+            "db_password": None,
+            "db_host": None,
+            "db_port": None,
+        }
+        if db_config:
+            combined_config.update(db_config)
+        for key in combined_config:
+            if key in legacy_config:
+                combined_config[key] = legacy_config[key]
+
         resolved = {
-            "dbname": db_name or DB_CONFIG["db_name"],
-            "user": db_user or DB_CONFIG["db_user"],
-            "password": db_password or DB_CONFIG["db_password"],
-            "host": db_host or DB_CONFIG["db_host"],
-            "port": db_port or DB_CONFIG["db_port"],
+            "dbname": combined_config["db_name"] or DB_CONFIG["db_name"],
+            "user": combined_config["db_user"] or DB_CONFIG["db_user"],
+            "password": combined_config["db_password"] or DB_CONFIG["db_password"],
+            "host": combined_config["db_host"] or DB_CONFIG["db_host"],
+            "port": combined_config["db_port"] or DB_CONFIG["db_port"],
         }
         key_to_env = {
             "dbname": "DB_NAME",
@@ -113,24 +123,31 @@ def load_query_results() -> list[dict[str, Any]]:
     connection = create_connection()
     try:
         for query in queries:
+            stmt = query_data.get_query_stmt(query)
+            params = query_data.get_query_params(query)
             rows, columns = query_data.execute_query(
-                connection, query["sql"], query["params"] or ()
+                connection, stmt, params
             )
             display = query_data.format_display(
                 rows, query.get("display_mode"), query.get("display_labels")
+            )
+            sql_text = (
+                stmt.as_string(connection).strip()
+                if hasattr(stmt, "as_string")
+                else str(stmt).strip()
             )
             results.append(
                 {
                     "title": query["title"],
                     "description": query["description"],
-                    "sql": query["sql"].strip(),
+                    "sql": sql_text,
                     "columns": columns,
                     "rows": rows,
                     "display": display,
                     "error": None,
                 }
             )
-    except Exception as exc:
+    except (RuntimeError, psycopg.Error, KeyError, TypeError, ValueError):
         # Provide a single error result so the UI can render gracefully.
         results.append(
             {
@@ -139,11 +156,12 @@ def load_query_results() -> list[dict[str, Any]]:
                 "sql": "",
                 "columns": [],
                 "rows": [],
-                "error": str(exc),
+                "error": "Unable to load query results.",
             }
         )
     finally:
-        connection.close()
+        if hasattr(connection, "close"):
+            connection.close()
 
     return results
 
@@ -219,48 +237,64 @@ def _extract_page_number(url: str) -> int:
     return int(match.group(1)) if match else 1
 
 
-# Scrape new GradCafe pages, clean them, and insert new rows.
-def pull_gradcafe_data(
-    progress_callback: Callable[..., None] | None = None,
-    scraper_module=None,
-    clean_module=None,
-    connection_factory: Callable[..., Any] | None = None,
-) -> dict[str, int]:
-    """Scrape new GradCafe data, insert unseen rows, and return stats."""
-    _ensure_module_2_on_path()
-    if scraper_module is None or clean_module is None:
-        # Support both real package imports and tests that monkeypatch
-        # sys.modules["module_2"] with scrape/clean attributes.
-        module2 = sys.modules.get("module_2")
-        scrape = getattr(module2, "scrape", None) if module2 else None
-        clean = getattr(module2, "clean", None) if module2 else None
-        if scrape is None:
-            scrape = importlib.import_module("module_2.scrape")
-        if clean is None:
-            clean = importlib.import_module("module_2.clean")
+def _resolve_scrape_modules(scraper_module, clean_module):
+    """Resolve scrape/clean modules from args, module_2 shim, or package imports."""
+    if scraper_module is not None and clean_module is not None:
+        return scraper_module, clean_module
 
-        scraper_module = scraper_module or scrape
-        clean_module = clean_module or clean
+    # Support both real package imports and tests that monkeypatch
+    # sys.modules["module_2"] with scrape/clean attributes.
+    module2 = sys.modules.get("module_2")
+    scrape = getattr(module2, "scrape", None) if module2 else None
+    clean = getattr(module2, "clean", None) if module2 else None
+    if scrape is None:
+        scrape = importlib.import_module("module_2.scrape")
+    if clean is None:
+        clean = importlib.import_module("module_2.clean")
+    return scraper_module or scrape, clean_module or clean
 
-    connection_factory = connection_factory or create_connection
 
-    start_page = 1
-    raw_data = []
-    last_page = 0
-    pages_scraped = 0
-
+def _load_existing_context(connection_factory):
+    """Load stop URL and existing URLs from database using a short-lived connection."""
     connection = connection_factory()
     try:
         stop_url = _fetch_latest_url(connection)
         existing_urls = _fetch_existing_urls(connection)
     finally:
         connection.close()
+    return stop_url, existing_urls
 
+
+def _notify_page_progress(progress_callback, pages_scraped, page):
+    if progress_callback:
+        progress_callback(
+            progress={
+                "pages_scraped": pages_scraped,
+                "current_page": page,
+            }
+        )
+
+
+def _resolve_scraper_callables(scraper_module):
+    """Resolve scraper callables with support for public and legacy private names."""
+    return (
+        getattr(scraper_module, "fetch_html", None) or getattr(scraper_module, "_fetch_html"),
+        getattr(scraper_module, "parse_page", None) or getattr(scraper_module, "_parse_page"),
+    )
+
+
+def _scrape_new_rows(scraper_module, stop_url, progress_callback, start_page):
+    """Scrape pages until no data or stop_url is encountered."""
+    raw_data = []
+    last_page = 0
+    pages_scraped = 0
     page = start_page
+    fetch_html, parse_page = _resolve_scraper_callables(scraper_module)
+
     # Scrape until a page returns no data.
     while True:
-        html = scraper_module._fetch_html(f"{scraper_module.BASE_URL}?page={page}")
-        page_data = scraper_module._parse_page(html)
+        html = fetch_html(f"{scraper_module.BASE_URL}?page={page}")
+        page_data = parse_page(html)
         if not page_data:
             break
 
@@ -277,60 +311,49 @@ def pull_gradcafe_data(
                 raw_data.extend(page_data[:stop_index])
                 last_page = page
                 pages_scraped += 1
-                if progress_callback:
-                    progress_callback(
-                        progress={
-                            "pages_scraped": pages_scraped,
-                            "current_page": page,
-                        }
-                    )
+                _notify_page_progress(progress_callback, pages_scraped, page)
                 break
 
         raw_data.extend(page_data)
         last_page = page
         pages_scraped += 1
-        if progress_callback:
-            progress_callback(
-                progress={
-                    "pages_scraped": pages_scraped,
-                    "current_page": page,
-                }
-            )
+        _notify_page_progress(progress_callback, pages_scraped, page)
         page += 1
 
-    # Normalize the scraped data before inserting.
-    cleaned_data = clean_module.clean_data(raw_data)
+    return raw_data, last_page, pages_scraped
 
+
+def _insert_cleaned_rows(connection_factory, cleaned_data, existing_urls, progress_callback):
+    """Insert cleaned rows and return insert counters plus collected new entries."""
     connection = connection_factory()
     create_applicants_table(connection)
 
-    inserted_count = 0
-    error_count = 0
-    duplicate_count = 0
-    missing_url_count = 0
+    stats = {
+        "inserted": 0,
+        "errors": 0,
+        "duplicates": 0,
+        "missing_urls": 0,
+    }
     new_entries = []
 
     def should_skip(entry):
-        nonlocal duplicate_count, missing_url_count
         url = entry.get("url") or ""
         if not url:
-            missing_url_count += 1
+            stats["missing_urls"] += 1
             return True
         if url in existing_urls:
-            duplicate_count += 1
+            stats["duplicates"] += 1
             return True
         return False
 
     def on_inserted(entry, _index, inserted):
-        nonlocal inserted_count
-        inserted_count = inserted
+        stats["inserted"] = inserted
         url = entry.get("url") or ""
         existing_urls.add(url)
         new_entries.append(entry)
 
     def on_insert_error(_entry, _index, _error, errors):
-        nonlocal error_count
-        error_count = errors
+        stats["errors"] = errors
 
     def on_progress(index, inserted, errors):
         if progress_callback:
@@ -338,8 +361,8 @@ def pull_gradcafe_data(
                 progress={
                     "processed": index,
                     "inserted": inserted,
-                    "duplicates": duplicate_count,
-                    "missing_urls": missing_url_count,
+                    "duplicates": stats["duplicates"],
+                    "missing_urls": stats["missing_urls"],
                     "errors": errors,
                 }
             )
@@ -360,6 +383,34 @@ def pull_gradcafe_data(
     finally:
         connection.close()
 
+    stats["inserted"] = inserted_count
+    stats["errors"] = error_count
+    return stats, new_entries
+
+
+# Scrape new GradCafe pages, clean them, and insert new rows.
+def pull_gradcafe_data(
+    progress_callback: Callable[..., None] | None = None,
+    scraper_module=None,
+    clean_module=None,
+    connection_factory: Callable[..., Any] | None = None,
+) -> dict[str, int]:
+    """Scrape new GradCafe data, insert unseen rows, and return stats."""
+    _ensure_module_2_on_path()
+    scraper_module, clean_module = _resolve_scrape_modules(scraper_module, clean_module)
+    connection_factory = connection_factory or create_connection
+    start_page = 1
+    stop_url, existing_urls = _load_existing_context(connection_factory)
+    raw_data, last_page, pages_scraped = _scrape_new_rows(
+        scraper_module, stop_url, progress_callback, start_page
+    )
+
+    # Normalize the scraped data before inserting.
+    cleaned_data = clean_module.clean_data(raw_data)
+    insert_stats, new_entries = _insert_cleaned_rows(
+        connection_factory, cleaned_data, existing_urls, progress_callback
+    )
+
     # Save the new entries for inspection/debugging.
     new_data_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "new_data.json")
@@ -372,10 +423,10 @@ def pull_gradcafe_data(
         "end_page": last_page,
         "pages_scraped": pages_scraped,
         "processed": len(cleaned_data),
-        "inserted": inserted_count,
-        "duplicates": duplicate_count,
-        "missing_urls": missing_url_count,
-        "errors": error_count,
+        "inserted": insert_stats["inserted"],
+        "duplicates": insert_stats["duplicates"],
+        "missing_urls": insert_stats["missing_urls"],
+        "errors": insert_stats["errors"],
     }
 
 
@@ -429,7 +480,7 @@ def _get_pull_runner() -> Callable[..., dict[str, int]]:
 @dashboard_bp.route("/analysis")
 def dashboard():
     """Render the analysis dashboard view."""
-    pull_status = request.args.get("pull_status")
+    pull_status_value = request.args.get("pull_status")
     pull_message = request.args.get("pull_message")
     is_pull_running = _get_pull_in_progress()
     pull_state = _get_pull_status_snapshot()
@@ -437,7 +488,7 @@ def dashboard():
     return render_template(
         "dashboard.html",
         results=results,
-        pull_status=pull_status,
+        pull_status=pull_status_value,
         pull_message=pull_message,
         pull_in_progress=is_pull_running,
         pull_state=pull_state,
@@ -510,7 +561,7 @@ def _run_pull_job(pull_runner: Callable[..., dict[str, int]] | None = None) -> N
         if summary["errors"]:
             message += f" {summary['errors']} inserts failed."
         _update_pull_status(message=message, progress=summary)
-    except Exception as exc:
+    except (RuntimeError, psycopg.Error, OSError, ValueError, TypeError) as exc:
         _update_pull_status(message=f"Pull failed: {exc}")
     finally:
         _set_pull_in_progress(False)

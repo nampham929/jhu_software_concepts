@@ -376,3 +376,14 @@ def test_query_data_main_uses_database_url(monkeypatch):
     monkeypatch.setattr(query_data, "get_queries", lambda: [])
     query_data.main()
     assert conn.closed is True
+
+
+@pytest.mark.analysis
+def test_query_limit_clamping_and_param_fallbacks():
+    # Ensure LIMIT values are clamped and params fallback works for legacy/non-limit query maps.
+    assert query_data.clamp_query_limit(0) == 1
+    assert query_data.clamp_query_limit(999) == 100
+    assert query_data.clamp_query_limit("abc", default=7) == 7
+
+    assert query_data.get_query_params({"params": ("x",), "limit": 500}) == ("x", 100)
+    assert query_data.get_query_params({"params": ("x",)}) == ("x",)
