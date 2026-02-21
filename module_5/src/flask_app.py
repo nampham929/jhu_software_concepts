@@ -35,4 +35,5 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    create_app().run(debug=True)
+    debug_mode = os.getenv("FLASK_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
+    create_app().run(debug=debug_mode)

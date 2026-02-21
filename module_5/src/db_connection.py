@@ -5,6 +5,7 @@ from __future__ import annotations
 
 def build_db_config(db_name, db_user, db_password, db_host, db_port):
     """Build a standard db-config mapping used by connection helpers."""
+    # Keep one canonical key shape so callers can share connection helpers.
     return {
         "db_name": db_name,
         "db_user": db_user,
@@ -20,6 +21,7 @@ def create_connection_with_driver(
     db_config,
 ):
     """Create and return a PostgreSQL connection via an injected driver."""
+    # Driver/callable injection keeps this helper easy to unit test.
     connection = None
     try:
         connection = connect_callable(
@@ -40,8 +42,10 @@ def create_connection_from_env(connect_url_callable, create_connection_callable,
     """Create a DB connection from DATABASE_URL or discrete DB_* env vars."""
     database_url = getenv("DATABASE_URL")
     if database_url:
+        # Prefer a single URL when provided (deployment-friendly path).
         return connect_url_callable(database_url)
 
+    # Fall back to discrete environment variables for local/dev setups.
     config = {
         "DB_NAME": getenv("DB_NAME"),
         "DB_USER": getenv("DB_USER"),

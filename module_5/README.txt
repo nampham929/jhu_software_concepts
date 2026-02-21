@@ -12,6 +12,20 @@ git@github.com:nampham929/jhu_software_concepts.git
 How to run the program:
 -Install the required packages in the requirements.txt file
 
+Fresh Install:
+- Method 1 (pip):
+  1) python -m venv .venv
+  2) .\.venv\Scripts\Activate.ps1
+  3) python -m pip install --upgrade pip
+  4) python -m pip install -r requirements.txt
+
+- Method 2 (uv):
+  1) uv venv .venv
+  2) .\.venv\Scripts\Activate.ps1
+  3) uv pip sync requirements.txt
+
+Note: uv pip sync makes the environment match requirements.txt exactly, which helps reproducibility.
+
 How to run Pylint:
 - Inside module_5 folder in the terminal, run .\.venv\Scripts\python.exe -m pylint src\*.py src\blueprints\*.py
 
@@ -44,3 +58,4 @@ GRANT USAGE, SELECT ON SEQUENCE public.applicants_p_id_seq TO <APP_ROLE>;
 4. Known Bugs: 
 
 5. Citations:
+

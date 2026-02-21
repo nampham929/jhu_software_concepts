@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 
+# Single canonical insert statement so all loaders write rows consistently.
 INSERT_APPLICANTS_QUERY = """
     INSERT INTO applicants (
         program, comments, date_added, url, status, term,
@@ -21,6 +22,7 @@ def build_insert_values(
     parse_float_func: Callable[[str | None], float | None],
 ) -> tuple:
     """Build insert values in applicants-column order."""
+    # Keep this order exactly aligned with INSERT_APPLICANTS_QUERY.
     return (
         entry.get("program"),
         entry.get("comments"),
@@ -43,10 +45,15 @@ def build_insert_values(
 class InsertEntriesOptions:
     """Optional callbacks and policies used while inserting entries."""
 
+    # Return True to skip an entry before attempting INSERT.
     should_skip: Callable | None = None
+    # Called after a successful INSERT.
     on_inserted: Callable | None = None
+    # Called when an INSERT fails (after rollback).
     on_insert_error: Callable | None = None
+    # Called on periodic progress checkpoints.
     on_progress: Callable | None = None
+    # Custom policy that decides when to commit.
     should_commit: Callable | None = None
 
 
@@ -63,6 +70,7 @@ def insert_entries(
 
     def default_should_commit(index, inserted, errors):
         _ = index, errors
+        # Default batching: commit every 100 successful inserts.
         return inserted > 0 and inserted % 100 == 0
 
     commit_check = callbacks.should_commit or default_should_commit
@@ -77,6 +85,7 @@ def insert_entries(
                 callbacks.on_inserted(entry, index, inserted_count)
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_count += 1
+            # Keep the connection usable after statement-level failures.
             connection.rollback()
             if callbacks.on_insert_error:
                 callbacks.on_insert_error(entry, index, error, error_count)
@@ -86,5 +95,6 @@ def insert_entries(
             if callbacks.on_progress:
                 callbacks.on_progress(index, inserted_count, error_count)
 
+    # Final commit flushes any trailing successful inserts.
     connection.commit()
     return inserted_count, error_count
