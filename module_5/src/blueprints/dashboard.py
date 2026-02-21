@@ -14,11 +14,16 @@ import psycopg
 from psycopg import OperationalError
 
 from applicant_insert import InsertEntriesOptions, build_insert_values, insert_entries
-from load_data import create_applicants_table, parse_date, parse_float
+from load_data import create_applicants_table as _create_applicants_table, parse_date, parse_float
 import query_data
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
+
+
+def create_applicants_table(connection):  # pragma: no cover
+    """Backward-compatible proxy to load_data table setup helper."""
+    return _create_applicants_table(connection)
 
 # Shared runtime configuration; populated by flask_app.create_app(...).
 APP_SETTINGS: dict[str, Any] = {
@@ -326,7 +331,6 @@ def _scrape_new_rows(scraper_module, stop_url, progress_callback, start_page):
 def _insert_cleaned_rows(connection_factory, cleaned_data, existing_urls, progress_callback):
     """Insert cleaned rows and return insert counters plus collected new entries."""
     connection = connection_factory()
-    create_applicants_table(connection)
 
     stats = {
         "inserted": 0,
