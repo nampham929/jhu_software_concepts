@@ -30,6 +30,7 @@ REQUIRED_FIELDS = [
 
 
 class _LoadConn:
+    # Lightweight connection double for load_data unit tests.
     def __init__(self, fail_execute=False):
         self.fail_execute = fail_execute
         self.executed = []
@@ -60,6 +61,7 @@ def test_insert_on_pull_writes_required_schema_rows(
     # Ensure a pull inserts at least one row and populates all required schema columns.
     mock_reset_applicants_table()
 
+    # Use a deterministic in-test runner so /pull-data can be asserted end-to-end.
     def fake_pull_runner(progress_callback=None):
         conn = dashboard.create_connection(database_url=mock_db_url)
         try:
@@ -100,6 +102,7 @@ def test_insert_on_pull_writes_required_schema_rows(
 
     conn = dashboard.create_connection(database_url=mock_db_url)
     try:
+        # Baseline before triggering the route handler.
         before_count = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
     finally:
         conn.close()
@@ -112,6 +115,7 @@ def test_insert_on_pull_writes_required_schema_rows(
 
     conn = dashboard.create_connection(database_url=mock_db_url)
     try:
+        # Re-read row count and one sample row after route execution.
         after_count = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
         row = conn.execute(
             """
@@ -149,6 +153,7 @@ def test_idempotency_duplicate_pull_does_not_duplicate_rows(
     entry["GPA"] = "3.95"
 
     fake_scraper = SimpleNamespace(
+        # Return one page of data, then stop to emulate finite scrape pagination.
         BASE_URL="https://fake.local/survey",
         _fetch_html=lambda url: url,
         _parse_page=lambda html: [entry] if dashboard._extract_page_number(html) == 1 else [],
@@ -198,6 +203,7 @@ def test_simple_query_function_returns_expected_schema_keys(
 
     conn = dashboard.create_connection(database_url=mock_db_url)
     try:
+        # Seed one row directly, then read it through the dashboard query helper.
         conn.execute(
             """
             INSERT INTO applicants (
@@ -296,6 +302,7 @@ def test_load_data_from_jsonl_success_and_error_paths(tmp_path):
     jsonl_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
 
     conn = _LoadConn()
+    # Happy path: one valid JSON line should yield one insert.
     load_data.load_data_from_jsonl(conn, str(jsonl_path))
     assert conn.commit_count >= 1
     assert len(conn.executed) == 1
@@ -303,9 +310,11 @@ def test_load_data_from_jsonl_success_and_error_paths(tmp_path):
     bad_jsonl_path = tmp_path / "bad_rows.jsonl"
     bad_jsonl_path.write_text("{not-json}\n", encoding="utf-8")
     conn_bad_json = _LoadConn()
+    # Malformed JSON should be reported but not crash the loader.
     load_data.load_data_from_jsonl(conn_bad_json, str(bad_jsonl_path))
 
     conn_insert_fail = _LoadConn(fail_execute=True)
+    # Insert exceptions should trigger rollback handling inside insert loop.
     load_data.load_data_from_jsonl(conn_insert_fail, str(jsonl_path))
     assert conn_insert_fail.rollback_count >= 1
 
@@ -330,6 +339,7 @@ def test_load_data_main_success_and_failure(monkeypatch):
             self.closed = True
 
     conn = _MainConn()
+    # Isolate main() control flow by stubbing table creation and load operations.
     monkeypatch.setattr(load_data, "create_connection", lambda *args, **kwargs: conn)
     monkeypatch.setattr(load_data, "create_applicants_table", lambda c: None)
     monkeypatch.setattr(load_data, "load_data_from_jsonl", lambda c, p: None)
@@ -363,13 +373,16 @@ def test_load_data_empty_line_commit_100_and_outer_exception(tmp_path, monkeypat
         "llm-generated-university": "JHU",
     }
     lines = [json.dumps(row) for _ in range(100)]
+    # Explicit blank line exercises skip-empty-line branch in JSONL iterator.
     lines.append("")
     jsonl_path.write_text("\n".join(lines), encoding="utf-8")
 
     conn = _LoadConn()
     load_data.load_data_from_jsonl(conn, str(jsonl_path))
+    # Expect at least one periodic commit plus final commit.
     assert conn.commit_count >= 2
 
+    # Force detect_file_encoding failure to cover outer exception propagation path.
     monkeypatch.setattr(load_data, "detect_file_encoding", lambda path: (_ for _ in ()).throw(RuntimeError("enc fail")))
     with pytest.raises(RuntimeError):
         load_data.load_data_from_jsonl(conn, str(jsonl_path))
@@ -419,6 +432,7 @@ def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatc
 
     read_conn = _ConnRead()
     write_conn = _ConnWrite()
+    # pull_gradcafe_data opens two short-lived connections: read context then write inserts.
     pool = [read_conn, write_conn]
 
     def connection_factory():
@@ -449,6 +463,7 @@ def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatc
     )
 
     assert summary["pages_scraped"] == 1
+    # stop_url should truncate one page payload to only unseen leading rows.
     assert summary["processed"] == 1
     assert callbacks
 
@@ -494,6 +509,7 @@ def test_pull_gradcafe_data_fallback_imports_when_module2_attrs_missing(monkeypa
 
     read_conn = _ConnRead()
     write_conn = _ConnWrite()
+    # Connection factory order mirrors read-context then write phase.
     pool = [read_conn, write_conn]
 
     def connection_factory():
@@ -515,6 +531,7 @@ def test_pull_gradcafe_data_fallback_imports_when_module2_attrs_missing(monkeypa
 
     import_calls = []
 
+    # Simulate importlib fallback used when module_2 lacks scrape/clean attributes.
     def _fake_import(name):
         import_calls.append(name)
         if name == "module_2.scrape":
@@ -567,6 +584,7 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
             self.inserted = []
 
         def execute(self, sql, params=None):
+            # Raise once for a sentinel URL to drive rollback/error accounting branch.
             if "INSERT INTO applicants" in sql:
                 url = params[3]
                 if url == "https://example.test/error":
@@ -591,6 +609,7 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
         return pool.pop(0)
 
     rows = []
+    # 101 rows trigger periodic commit logic at index 100.
     for i in range(101):
         rows.append(
             {
@@ -610,6 +629,7 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
         )
     rows.extend(
         [
+            # Explicit edge rows for missing URL, duplicate URL, and failing insert.
             {"url": ""},
             {"url": "https://example.test/dup"},
             {
@@ -650,6 +670,7 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
     assert summary["duplicates"] >= 1
     assert summary["errors"] >= 1
     assert write_conn.rollback_count >= 1
+    # At least one batch commit and one final commit are expected.
     assert write_conn.commit_count >= 2
     assert progress_calls
 

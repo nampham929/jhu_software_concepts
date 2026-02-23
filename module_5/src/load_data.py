@@ -15,6 +15,7 @@ from db_connection import (
 
 def create_connection(db_name, db_user, db_password, db_host, db_port):
     """Create and return a PostgreSQL connection."""
+    # Delegate shared validation and connect-call wiring to db_connection helpers.
     return create_connection_with_driver(
         psycopg.connect,
         OperationalError,
@@ -43,6 +44,7 @@ def create_applicants_table(connection):
     );
     """
     try:
+        # DDL is committed explicitly so downstream inserts always see the table.
         connection.execute(create_table_query)
         connection.commit()
         print("Applicants table created successfully")
@@ -73,6 +75,7 @@ def parse_float(value):
 
 def detect_file_encoding(file_path):
     """Detect the likely encoding for an input JSONL file."""
+    # Inspect BOM bytes only; this avoids reading the full input into memory.
     with open(file_path, "rb") as f:
         first_bytes = f.read(4)
     if first_bytes.startswith(b"\xff\xfe") or first_bytes.startswith(b"\xfe\xff"):
@@ -89,6 +92,7 @@ def _iter_json_entries(file_handle, error_state):
         try:
             yield {"line_num": line_num, "data": json.loads(line.strip())}
         except json.JSONDecodeError as error:
+            # Keep loading after malformed lines and retain first-error context for summary.
             error_state["error_count"] += 1
             if error_state["first_error_line"] is None:
                 error_state["first_error_line"] = line_num
@@ -111,6 +115,7 @@ def _handle_insert_error(entry, _index, error, total_errors, error_state):
 def load_data_from_jsonl(connection, jsonl_file):
     """Load applicant rows from a JSONL file into the database."""
     try:
+        # Shared error-state drives both inline warnings and final summary output.
         error_state = {
             "error_count": 0,
             "first_error_line": None,
@@ -122,6 +127,7 @@ def load_data_from_jsonl(connection, jsonl_file):
 
         with open(jsonl_file, 'r', encoding=encoding) as file_handle:
             entries = _iter_json_entries(file_handle, error_state)
+            # insert_entries centralizes batch commit and rollback behavior.
             inserted_count, _insert_error_count = insert_entries(
                 connection,
                 entries,
@@ -151,6 +157,7 @@ def load_data_from_jsonl(connection, jsonl_file):
         print(f"Error: File '{jsonl_file}' not found")
         raise
     except Exception as e:
+        # Roll back any partial transaction so callers can safely retry.
         print(f"Error during data loading: {e}")
         connection.rollback()
         raise
@@ -161,6 +168,7 @@ def main():
     jsonl_file = "llm_extend_applicant_data.jsonl"
 
     try:
+        # Prefer DATABASE_URL when present; otherwise use discrete DB_* env vars.
         conn = create_connection_from_env(psycopg.connect, create_connection, os.getenv)
 
         # Create table

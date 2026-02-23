@@ -219,10 +219,33 @@ def _ensure_module_2_on_path() -> str:
 
 # Get a set of URLs already in the DB so the program can skip duplicates.
 def _fetch_existing_urls(connection) -> set[str]:
-    cursor = connection.execute(
-        "SELECT url FROM applicants WHERE url IS NOT NULL AND url <> '';"
+    batch_size = query_data.clamp_query_limit(
+        query_data.MAX_QUERY_LIMIT, default=query_data.MAX_QUERY_LIMIT
     )
-    return {row[0] for row in cursor.fetchall()}
+    offset = 0
+    urls: set[str] = set()
+
+    while True:
+        cursor = connection.execute(
+            """
+            SELECT url
+            FROM applicants
+            WHERE url IS NOT NULL AND url <> ''
+            ORDER BY url
+            LIMIT %s OFFSET %s;
+            """,
+            (batch_size, offset),
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            break
+        urls.update(row[0] for row in rows)
+        has_more = len(rows) == batch_size
+        offset += batch_size if has_more else 0
+        if not has_more:
+            break
+
+    return urls
 
 
 # Return the newest applicant URL in the database.

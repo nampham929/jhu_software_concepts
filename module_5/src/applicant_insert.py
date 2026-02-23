@@ -23,6 +23,7 @@ def build_insert_values(
 ) -> tuple:
     """Build insert values in applicants-column order."""
     # Keep this order exactly aligned with INSERT_APPLICANTS_QUERY.
+    # Source keys reflect upstream scraped/cleaned field names.
     return (
         entry.get("program"),
         entry.get("comments"),
@@ -66,6 +67,7 @@ def insert_entries(
     """Insert entries with commit/rollback handling and optional callbacks."""
     inserted_count = 0
     error_count = 0
+    # Normalize optional callback config once for the full insert run.
     callbacks = options or InsertEntriesOptions()
 
     def default_should_commit(index, inserted, errors):
@@ -76,9 +78,11 @@ def insert_entries(
     commit_check = callbacks.should_commit or default_should_commit
 
     for index, entry in enumerate(entries, 1):
+        # Skip policy lets callers short-circuit known duplicates/invalid rows.
         if callbacks.should_skip and callbacks.should_skip(entry):
             continue
         try:
+            # Build values outside SQL text to keep INSERT parameterized.
             connection.execute(INSERT_APPLICANTS_QUERY, build_values(entry))
             inserted_count += 1
             if callbacks.on_inserted:
@@ -90,6 +94,7 @@ def insert_entries(
             if callbacks.on_insert_error:
                 callbacks.on_insert_error(entry, index, error, error_count)
 
+        # Commit policy is caller-overridable for batch size/perf tuning.
         if commit_check(index, inserted_count, error_count):
             connection.commit()
             if callbacks.on_progress:

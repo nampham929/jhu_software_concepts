@@ -8,6 +8,7 @@ from flask_app import create_app
 
 @pytest.fixture
 def app(monkeypatch):
+    # Provide a stable one-query payload so template rendering is predictable in tests.
     monkeypatch.setattr(
         dashboard,
         "load_query_results",
@@ -24,6 +25,7 @@ def app(monkeypatch):
         ],
     )
 
+    # Reset global pull-state before each test that uses this fixture.
     dashboard._set_pull_in_progress(False)
     dashboard._update_pull_status(
         message="Idle",
@@ -38,6 +40,7 @@ def app(monkeypatch):
         },
     )
 
+    # Force synchronous pull behavior unless a test explicitly enables background mode.
     return create_app({"TESTING": True, "RUN_PULL_IN_BACKGROUND": False})
 
 
@@ -46,6 +49,7 @@ def test_post_pull_data_returns_ok_and_triggers_loader(app):
     # Ensure /pull-data succeeds and invokes the configured pull runner once.
     calls = {"count": 0}
 
+    # Simulate a single successful pull cycle and emit one progress update.
     def fake_pull_runner(progress_callback=None):
         calls["count"] += 1
         if progress_callback:
@@ -62,6 +66,7 @@ def test_post_pull_data_returns_ok_and_triggers_loader(app):
         }
 
     app.config["PULL_RUNNER"] = fake_pull_runner
+    # Apply app-level settings into dashboard module globals used by handlers.
     dashboard.configure_dashboard(app.config)
 
     with app.test_client() as client:
@@ -130,6 +135,7 @@ def test_pull_data_background_mode_returns_202(monkeypatch):
     app = create_app({"TESTING": True, "RUN_PULL_IN_BACKGROUND": True})
 
     class FakeThread:
+        # Class flag used to assert that start() was invoked.
         started = False
 
         def __init__(self, target=None, args=None, daemon=None):
@@ -140,6 +146,7 @@ def test_pull_data_background_mode_returns_202(monkeypatch):
             FakeThread.started = True
 
     monkeypatch.setattr(dashboard.threading, "Thread", FakeThread)
+    # Provide a no-op successful summary so the route can return immediately.
     app.config["PULL_RUNNER"] = lambda progress_callback=None: {
         "start_page": 1,
         "end_page": 1,
@@ -165,6 +172,7 @@ def test_run_pull_job_branches_and_failure(monkeypatch):
     # Cover _run_pull_job success-without-pages and exception failure branches.
     dashboard._set_pull_in_progress(True)
 
+    # Branch 1: runner completes with zero scraped pages.
     def no_pages_runner(progress_callback=None):
         return {
             "start_page": 1,
@@ -185,6 +193,7 @@ def test_run_pull_job_branches_and_failure(monkeypatch):
 
     dashboard._set_pull_in_progress(True)
 
+    # Branch 2: runner raises, which should be converted into a pull-failed message.
     def failing_runner(progress_callback=None):
         raise RuntimeError("boom")
 
@@ -199,6 +208,8 @@ def test_create_connection_uses_db_config_and_error(monkeypatch):
     # Verify create_connection uses discrete DB settings and wraps connection failures.
     monkeypatch.delenv("DATABASE_URL", raising=False)
     dashboard.APP_SETTINGS["DATABASE_URL"] = None
+
+    # Swap OperationalError type so this unit test can raise/catch a local exception.
     class DummyOpErr(Exception):
         pass
 
@@ -206,6 +217,7 @@ def test_create_connection_uses_db_config_and_error(monkeypatch):
 
     calls = {}
 
+    # Capture kwargs to verify db_name/user/etc. are mapped to psycopg connect args.
     def fake_connect(*args, **kwargs):
         calls.update(kwargs)
         return object()
@@ -238,6 +250,7 @@ def test_load_query_results_success_and_error(monkeypatch):
         def close(self):
             pass
 
+    # Success path: deterministic query metadata + execution result + formatter output.
     monkeypatch.setattr(dashboard, "create_connection", lambda *args, **kwargs: Conn())
     monkeypatch.setattr(
         dashboard.query_data,
@@ -251,6 +264,7 @@ def test_load_query_results_success_and_error(monkeypatch):
     assert ok[0]["title"] == "T"
     assert ok[0]["display"] == "1"
 
+    # Error path: execution failure should become a single graceful Query Error payload.
     def raise_query(*args, **kwargs):
         raise RuntimeError("bad query")
 
@@ -277,6 +291,7 @@ def test_fetch_applicant_row_by_url_none_branch():
 @pytest.mark.buttons
 def test_fetch_applicant_row_by_url_success_branch():
     # Ensure fetch_applicant_row_by_url maps tuple values to expected response keys.
+    # Tuple order mirrors SELECT field order in fetch_applicant_row_by_url().
     row = (
         "Computer Science, Johns Hopkins University",
         "c",
@@ -352,6 +367,7 @@ def test_create_connection_uses_db_config_argument(monkeypatch):
     dashboard.APP_SETTINGS["DATABASE_URL"] = None
     calls = {}
 
+    # Verify db_config values take effect when DATABASE_URL is absent.
     def fake_connect(*args, **kwargs):
         calls.update(kwargs)
         return object()

@@ -10,13 +10,16 @@ from load_data import create_applicants_table
 
 
 def _build_pull_runner(db_url: str, records: list[tuple]):
+    # Build a deterministic pull runner used by integration tests.
 
     def fake_pull_runner(progress_callback=None):
+        # Use the app's DB helper so tests follow production connection wiring.
         conn = dashboard.create_connection(database_url=db_url)
         inserted = 0
         duplicates = 0
         try:
             create_applicants_table(conn)
+            # Seed duplicate detection from URLs already present in DB.
             existing = {
                 row[0]
                 for row in conn.execute(
@@ -24,6 +27,7 @@ def _build_pull_runner(db_url: str, records: list[tuple]):
                 ).fetchall()
             }
             for row in records:
+                # Row index 3 is URL in the applicants insert tuple shape.
                 if row[3] in existing:
                     duplicates += 1
                     continue
@@ -43,6 +47,7 @@ def _build_pull_runner(db_url: str, records: list[tuple]):
         finally:
             conn.close()
 
+        # Mirror dashboard progress callback contract used by /pull-data.
         if progress_callback:
             progress_callback(progress={"processed": len(records), "inserted": inserted})
 
@@ -61,6 +66,7 @@ def _build_pull_runner(db_url: str, records: list[tuple]):
 
 
 def _analysis_results_from_db(db_url: str):
+    # Read raw metrics directly from DB and return dashboard-shaped result objects.
     conn = dashboard.create_connection(database_url=db_url)
     try:
         total = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()[0]
@@ -115,6 +121,7 @@ def test_end_to_end_pull_update_render(
     monkeypatch.setattr(dashboard, "load_query_results", lambda: _analysis_results_from_db(mock_db_url))
 
     with app.test_client() as client:
+        # Drive the same route sequence a user would trigger in the UI.
         pull_resp = client.post("/pull-data")
         update_resp = client.post("/update-analysis")
         page_resp = client.get("/analysis")
@@ -127,6 +134,7 @@ def test_end_to_end_pull_update_render(
 
     html = page_resp.get_data(as_text=True)
     soup = BeautifulSoup(html, "html.parser")
+    # Verify both presence of answer label and expected acceptance percentage.
     assert soup.find(string="Answer:") is not None
     assert "50.00%" in html
 
@@ -150,6 +158,7 @@ def test_multiple_pulls_with_overlapping_data_remain_consistent(
     )
 
     with app.test_client() as client:
+        # Second pull uses the same records; duplicate filtering should keep row count stable.
         first = client.post("/pull-data")
         second = client.post("/pull-data")
 

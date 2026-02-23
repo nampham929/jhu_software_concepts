@@ -12,6 +12,7 @@ import query_data
 
 
 class _FakeCursor:
+    # Minimal cursor stand-in for tests that only need fetchall/description.
     def __init__(self, rows, columns):
         self._rows = rows
         self.description = [SimpleNamespace(name=name) for name in columns] if columns else None
@@ -21,6 +22,7 @@ class _FakeCursor:
 
 
 class _FakeConnection:
+    # Minimal connection stand-in that tracks SQL calls made by query_data.
     def __init__(self, rows, columns):
         self.rows = rows
         self.columns = columns
@@ -34,6 +36,7 @@ class _FakeConnection:
 @pytest.mark.analysis
 def test_answer_labels_rendered_in_analysis_page(monkeypatch):
     # Ensure the analysis page renders an explicit "Answer:" label for query results.
+    # Patch the dashboard loader so template rendering is deterministic.
     monkeypatch.setattr(
         dashboard,
         "load_query_results",
@@ -69,6 +72,7 @@ def test_percentage_always_two_decimals():
     formatted_none = query_data.format_display([[None]], "percent")
     assert formatted_none == "0.00%"
 
+    # Keep a regex assertion to guard against accidental format drift.
     assert re.search(r"\d+\.\d{2}%$", formatted)
 
 
@@ -126,6 +130,7 @@ def test_run_query_success_and_error_paths(monkeypatch, capsys):
     )
     assert result == [(50.0,)]
 
+    # Replace execute_query with a failing stub to exercise exception handling.
     def _raise(*args, **kwargs):
         raise RuntimeError("bad")
 
@@ -155,6 +160,7 @@ def test_query_data_main_success_and_failure(monkeypatch):
     conn = _Conn()
     calls = {"run": 0}
 
+    # Patch DB/query functions so this test focuses only on main() flow.
     monkeypatch.setattr(query_data, "create_connection", lambda *args, **kwargs: conn)
     monkeypatch.setattr(query_data, "get_queries", lambda: [{"title": "t", "sql": "s", "params": None, "display_mode": "number"}])
     monkeypatch.setattr(query_data, "run_query", lambda *args, **kwargs: calls.__setitem__("run", calls["run"] + 1))
@@ -162,6 +168,7 @@ def test_query_data_main_success_and_failure(monkeypatch):
     assert calls["run"] == 1
     assert conn.closed is True
 
+    # Re-run main with a failing connection factory to cover fail-safe branch.
     def _raise(*args, **kwargs):
         raise RuntimeError("bad")
 
@@ -209,6 +216,7 @@ def test_module2_clean_load_clean_save(tmp_path):
     input_path.write_text('[{"a": "<b>x</b>   y", "b": null, "c": "N/A", "d": 7}]', encoding="utf-8")
 
     loaded = clean_mod.load_data(str(input_path))
+    # Pipeline under test: load -> clean -> save.
     cleaned = clean_mod.clean_data(loaded)
     clean_mod.save_data(cleaned, str(output_path))
 
@@ -239,6 +247,7 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
     assert "ALLOWED" in allowed
 
     class FakeResp:
+        # Context-manager shape mirrors urllib response objects used by the scraper.
         def __enter__(self):
             return self
 
@@ -251,6 +260,7 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
     monkeypatch.setattr(scrape_mod, "urlopen", lambda req: FakeResp())
     assert scrape_mod._fetch_html("https://x") == "<html></html>"
 
+    # Simulate the paired-row structure seen in GradCafe tables.
     html = """
     <table><tbody>
       <tr>
@@ -268,8 +278,10 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
     assert parsed[0]["status"] == "Accepted"
     assert parsed[0]["url"].endswith("/result/123")
 
+    # Empty markup should parse to an empty result set.
     assert scrape_mod._parse_page("<html></html>") == []
 
+    # Stub network/parser pieces to test scrape_data pagination behavior only.
     monkeypatch.setattr(scrape_mod, "_fetch_html", lambda url: "<html></html>")
     monkeypatch.setattr(scrape_mod, "_parse_page", lambda html: [{"x": 1}] if html else [])
     all_rows = scrape_mod.scrape_data(pages=2)
@@ -316,6 +328,7 @@ def test_module2_scrape_disallowed_and_rejected_branches(monkeypatch):
     disallowed = scrape_mod._check_robots_allowed("https://x")
     assert "DISALLOWED" in disallowed
 
+    # Include rows that should be skipped before a valid rejected-row payload.
     html = """
     <table><tbody>
       <tr class="tw-border-none"><td>skip row</td></tr>
@@ -347,9 +360,11 @@ def test_module2_run_main_imported_as_package(monkeypatch):
     monkeypatch.setitem(sys.modules, "clean", clean_mod)
     monkeypatch.setitem(sys.modules, "scrape", scrape_mod)
 
+    # Import after sys.modules patch so module_2.run resolves these names.
     run_mod = importlib.import_module("module_2.run")
 
     monkeypatch.setattr(run_mod.scrape, "_check_robots_allowed", lambda base: "ok")
+    # Patch I/O-heavy routines so main() runs as a pure unit test.
     monkeypatch.setattr(run_mod.scrape, "scrape_data", lambda pages: [{"a": 1}])
     monkeypatch.setattr(run_mod.scrape, "save_data", lambda data, filename: None)
     monkeypatch.setattr(run_mod.clean, "load_data", lambda filename: [{"a": 1}])
@@ -372,6 +387,7 @@ def test_query_data_main_uses_database_url(monkeypatch):
 
     conn = _Conn()
     monkeypatch.setenv("DATABASE_URL", "postgresql://db.example.invalid:5432/dbname")
+    # Stub direct-url connect path used by create_connection_from_env.
     monkeypatch.setattr(query_data.psycopg, "connect", lambda url: conn)
     monkeypatch.setattr(query_data, "get_queries", lambda: [])
     query_data.main()
