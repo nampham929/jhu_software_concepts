@@ -1,7 +1,7 @@
 # Nam Pham - JHED ID: npham21
 
 ## Module Info
-Module 5: Pytest and Sphinx  
+Module 5: Software Assurance and Secure SQL  
 Due Date: February 23, 2026
 
 ## Approach
