@@ -55,6 +55,13 @@ GRANT USAGE ON SCHEMA public TO <APP_ROLE>;
 GRANT SELECT, INSERT ON TABLE public.applicants TO <APP_ROLE>;
 GRANT USAGE, SELECT ON SEQUENCE public.applicants_p_id_seq TO <APP_ROLE>;
 
+Snyk Analysis:
+As I ran snyk test on module_5, it found 2 vulnerabilities:
+  Flask 3.1.2 has a security issue where sensitive data might unintentionally be cached. Even though the severity is Low, this could potentially expose sensitive information if caching is misconfigured.
+  Werkzeug 3.1.5 has security issues: Improper request handling, Header parsing issues, Debugger exposure issues, Cache / response handling edge cases, and Path normalization or routing edge cases.
+
+I patched these issues by using Flask 3.1.3 and Werkzeug 3.1.6. These new versions corrrected the issues.
+
 4. Known Bugs: 
 
 5. Citations:
