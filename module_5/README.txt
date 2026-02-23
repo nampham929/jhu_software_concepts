@@ -27,10 +27,10 @@ Fresh Install:
 Note: uv pip sync makes the environment match requirements.txt exactly, which helps reproducibility.
 
 How to run Pylint:
-- Inside module_5 folder in the terminal, run .\.venv\Scripts\python.exe -m pylint src\*.py src\blueprints\*.py
+- Inside module_5 folder, in the terminal, run .\.venv\Scripts\python.exe -m pylint src
 
 How to run pydeps:
- - Inside module_5 folder in the terminal, run pydeps src/flask_app.py --noshow -T svg -o dependency.svg --max-bacon 2 --include-missing
+ - Inside module_5 folder, in the terminal, run pydeps src/flask_app.py --noshow -T svg -o dependency.svg --max-bacon 2 --include-missing
 
 Least-Privilege DB User Setup:
 - SQL setup script: sql/least_privilege_setup.sql
