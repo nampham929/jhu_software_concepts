@@ -70,6 +70,9 @@ I patched these issues by using Flask 3.1.3 and Werkzeug 3.1.6. These new versio
 - Runs `snyk test` in CI (outputs scan results; token-based in GitHub Secrets).
 - Runs `pytest` with the PostgreSQL service setup used by this project.
 
+## Read the Docs
+- Published docs URL: `https://jhu-software-concepts-nampham.readthedocs.io/en/latest/`
+
 ## GitHub Repository
 The SSH URL to my GitHub repository:  
 `git@github.com:nampham929/jhu_software_concepts.git`
