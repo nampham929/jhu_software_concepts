@@ -286,6 +286,8 @@ def _load_existing_context(connection_factory):
     """Load stop URL and existing URLs from database using a short-lived connection."""
     connection = connection_factory()
     try:
+        # Ensure first-run pulls work even when the applicants table is not created yet.
+        create_applicants_table(connection)
         stop_url = _fetch_latest_url(connection)
         existing_urls = _fetch_existing_urls(connection)
     finally:

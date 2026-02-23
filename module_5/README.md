@@ -49,7 +49,9 @@ Final Pylint output: `Your code has been rated at 10.00/10` with no remaining wa
 ### Method 2 (uv)
 1. `uv venv .venv`
 2. `.\.venv\Scripts\Activate.ps1`
-3. `uv pip sync requirements.txt`
+3. `uv pip install -r requirements.txt`
+
+Note: `uv pip sync` is best used with a fully pinned lock file (including transitive dependencies). For this project's `requirements.txt`, use `uv pip install -r requirements.txt`.
 
 ## Snyk Analysis
 As I ran `snyk test` on `module_5`, it found 2 vulnerabilities:
