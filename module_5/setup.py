@@ -11,9 +11,9 @@ setup(
     install_requires=[
         "Flask==3.1.3",
         "python-dotenv==1.1.1",
-        "psycopg==3.3.2",
-        "psycopg-binary==3.3.2",
+        "psycopg[binary]==3.3.2",
         "Werkzeug==3.1.6",
     ],
     python_requires=">=3.10",
 )
+
