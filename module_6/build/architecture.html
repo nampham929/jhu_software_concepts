@@ -1,0 +1,151 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Architecture &mdash; Module 4 - Testing and Documentation Assignment version 6 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=230e45bd"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api_reference.html" />
+    <link rel="prev" title="Overview and Setup" href="overview_setup.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Module 4 - Testing and Documentation Assignment
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview_setup.html">Overview and Setup</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Architecture</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#web-layer">Web Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#etl-layer">ETL Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#database-and-analysis-layer">Database and Analysis Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#operational-flow">Operational Flow</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api_reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing_guide.html">Testing Guide</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Module 4 - Testing and Documentation Assignment</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Architecture</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/architecture.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="architecture">
+<h1>Architecture<a class="headerlink" href="#architecture" title="Link to this heading"></a></h1>
+<section id="web-layer">
+<h2>Web Layer<a class="headerlink" href="#web-layer" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">src/flask_app.py</span></code> creates and configures the Flask app.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">src/blueprints/dashboard.py</span></code> defines routes and pull-job runtime state.</p></li>
+<li><p>Templates and static assets are under <code class="docutils literal notranslate"><span class="pre">src/templates</span></code> and <code class="docutils literal notranslate"><span class="pre">src/static</span></code>.</p></li>
+</ul>
+</section>
+<section id="etl-layer">
+<h2>ETL Layer<a class="headerlink" href="#etl-layer" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">src/module_2/scrape.py</span></code> scrapes pages and parses applicant rows.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">src/module_2/clean.py</span></code> normalizes and cleans scraped records.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">src/load_data.py</span></code> creates the schema and inserts JSONL records into PostgreSQL.</p></li>
+</ul>
+</section>
+<section id="database-and-analysis-layer">
+<h2>Database and Analysis Layer<a class="headerlink" href="#database-and-analysis-layer" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>PostgreSQL stores applicant data in the <code class="docutils literal notranslate"><span class="pre">applicants</span></code> table.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">src/query_data.py</span></code> defines SQL queries and display formatting logic.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dashboard</span></code> routes call query helpers to render analysis output.</p></li>
+</ul>
+</section>
+<section id="operational-flow">
+<h2>Operational Flow<a class="headerlink" href="#operational-flow" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/pull-data</span></code> starts a pull job.</p></li>
+<li><p>Scrape and clean pipeline collects new records.</p></li>
+<li><p>New records are inserted into PostgreSQL with duplicate checks.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/analysis</span></code> renders query summaries from database results.</p></li>
+</ol>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="overview_setup.html" class="btn btn-neutral float-left" title="Overview and Setup" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api_reference.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Nam Pham.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
