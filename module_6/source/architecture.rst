@@ -11,8 +11,8 @@ Web Layer
 ETL Layer
 ---------
 
-- ``src/module_2/scrape.py`` scrapes pages and parses applicant rows.
-- ``src/module_2/clean.py`` normalizes and cleans scraped records.
+- ``src/web/app/scrape_support.py`` scrapes pages and parses applicant rows.
+- ``src/web/app/data_cleaning.py`` normalizes and cleans scraped records.
 - ``src/db/load_data.py`` creates the schema and data-loading helpers for PostgreSQL.
 
 Database and Analysis Layer

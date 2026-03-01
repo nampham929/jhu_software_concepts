@@ -394,9 +394,8 @@ def test_load_data_empty_line_commit_100_and_outer_exception(tmp_path, monkeypat
 
 @pytest.mark.db
 def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatch):
-    # Cover stop-URL short-circuit logic and default module_2 import wiring.
+    # Cover stop-URL short-circuit logic and default built-in helper wiring.
     import types
-    import sys
 
     class _Cursor:
         def __init__(self, rows=None, row=None):
@@ -452,11 +451,8 @@ def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatc
         ],
     )
     fake_clean = types.SimpleNamespace(clean_data=lambda rows: rows)
-    fake_module2 = types.ModuleType("module_2")
-    fake_module2.scrape = fake_scrape
-    fake_module2.clean = fake_clean
-
-    monkeypatch.setitem(sys.modules, "module_2", fake_module2)
+    monkeypatch.setattr(dashboard, "scrape_support", fake_scrape)
+    monkeypatch.setattr(dashboard, "data_cleaning", fake_clean)
     monkeypatch.setattr(dashboard, "create_applicants_table", lambda conn: None)
 
     callbacks = []
@@ -471,94 +467,6 @@ def test_pull_gradcafe_data_stop_url_branch_and_default_module_import(monkeypatc
     # stop_url should truncate one page payload to only unseen leading rows.
     assert summary["processed"] == 1
     assert callbacks
-
-
-@pytest.mark.db
-def test_pull_gradcafe_data_fallback_imports_when_module2_attrs_missing(monkeypatch):
-    # Cover fallback imports for module_2.scrape and module_2.clean.
-    import types
-    import sys
-
-    class _Cursor:
-        def __init__(self, rows=None, row=None):
-            self._rows = rows or []
-            self._row = row
-
-        def fetchall(self):
-            return self._rows
-
-        def fetchone(self):
-            return self._row
-
-    class _ConnRead:
-        def execute(self, sql, params=None):
-            if "ORDER BY date_added" in sql:
-                return _Cursor(row=None)
-            return _Cursor(rows=[])
-
-        def close(self):
-            return None
-
-    class _ConnWrite:
-        def execute(self, sql, params=None):
-            return _Cursor()
-
-        def commit(self):
-            return None
-
-        def rollback(self):
-            return None
-
-        def close(self):
-            return None
-
-    read_conn = _ConnRead()
-    write_conn = _ConnWrite()
-    # Connection factory order mirrors read-context then write phase.
-    pool = [read_conn, write_conn]
-
-    def connection_factory():
-        return pool.pop(0)
-
-    fake_module2 = types.ModuleType("module_2")
-    monkeypatch.setitem(sys.modules, "module_2", fake_module2)
-
-    fake_scrape = types.SimpleNamespace(
-        BASE_URL="https://fake.local/survey",
-        _fetch_html=lambda url: url,
-        _parse_page=lambda html: (
-            [{"url": "https://example.test/new-1", "date_added": "January 15, 2026"}]
-            if dashboard._extract_page_number(html) == 1
-            else []
-        ),
-    )
-    fake_clean = types.SimpleNamespace(clean_data=lambda rows: rows)
-
-    import_calls = []
-
-    # Simulate importlib fallback used when module_2 lacks scrape/clean attributes.
-    def _fake_import(name):
-        import_calls.append(name)
-        if name == "module_2.scrape":
-            return fake_scrape
-        if name == "module_2.clean":
-            return fake_clean
-        raise ModuleNotFoundError(name)
-
-    monkeypatch.setattr(dashboard.importlib, "import_module", _fake_import)
-    monkeypatch.setattr(dashboard, "create_applicants_table", lambda conn: None)
-
-    summary = dashboard.pull_gradcafe_data(
-        scraper_module=None,
-        clean_module=None,
-        connection_factory=connection_factory,
-    )
-
-    assert "module_2.scrape" in import_calls
-    assert "module_2.clean" in import_calls
-    assert summary["processed"] == 1
-
-
 @pytest.mark.db
 def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
     # Cover insert, duplicate, missing-url, error, progress, commit, and rollback branches.
@@ -679,25 +587,6 @@ def test_pull_gradcafe_data_insert_branches_progress_and_rollbacks(monkeypatch):
     assert write_conn.commit_count >= 2
     assert progress_calls
 
-
-@pytest.mark.db
-def test_ensure_module_2_on_path_adds_path_once():
-    # Ensure module_2 path helper is idempotent across repeated calls.
-    module_root = dashboard._ensure_module_2_on_path()
-    assert module_root in dashboard.sys.path
-    module_root_2 = dashboard._ensure_module_2_on_path()
-    assert module_root_2 == module_root
-
-@pytest.mark.db
-def test_ensure_module_2_on_path_insertion_branch(monkeypatch):
-    # Ensure module_2 path helper inserts the module root when missing from sys.path.
-    module_root = dashboard.os.path.abspath(
-        dashboard.os.path.join(dashboard.os.path.dirname(dashboard.__file__), "..", "..")
-    )
-    monkeypatch.setattr(dashboard.sys, "path", [p for p in dashboard.sys.path if p != module_root])
-    added = dashboard._ensure_module_2_on_path()
-    assert added == module_root
-    assert dashboard.sys.path[0] == module_root
 
 
 @pytest.mark.db

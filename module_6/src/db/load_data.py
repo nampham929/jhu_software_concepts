@@ -184,7 +184,9 @@ def load_data_from_jsonl(connection, jsonl_file):
 def main():
     """Main function to orchestrate the data loading process."""
     # Path to the JSONL file
-    jsonl_file = "llm_extend_applicant_data.jsonl"
+    jsonl_file = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data", "llm_extend_applicant_data.jsonl")
+    )
 
     try:
         # Prefer DATABASE_URL when present; otherwise use discrete DB_* env vars.

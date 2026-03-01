@@ -254,16 +254,23 @@ def handle_scrape_new_data(conn, payload):
 
     batch = _scrape_until(last_seen)
     newest_url = None
+    processed = len(batch)
     inserted = 0
+    duplicates = 0
+    missing_urls = 0
 
     for entry in batch:
         url = entry.get("url")
         if not url:
+            missing_urls += 1
             continue
         if newest_url is None:
             newest_url = url
         cursor = conn.execute(INSERT_APPLICANT_SQL, _build_row(entry))
-        inserted += max(cursor.rowcount, 0)
+        if max(cursor.rowcount, 0):
+            inserted += 1
+        else:
+            duplicates += 1
 
     if newest_url:
         _set_last_seen(conn, newest_url)
@@ -273,10 +280,10 @@ def handle_scrape_new_data(conn, payload):
         "completed",
         "Pull Data completed.",
         {
-            "processed": len(batch),
+            "processed": processed,
             "inserted": inserted,
-            "duplicates": max(len(batch) - inserted, 0),
-            "missing_urls": 0,
+            "duplicates": duplicates,
+            "missing_urls": missing_urls,
             "errors": 0,
             "pages_scraped": 0,
             "current_page": None,

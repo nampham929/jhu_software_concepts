@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import json
-import importlib
 import os
 import re
-import sys
 import threading
 from typing import Any, Callable
 
@@ -14,6 +12,7 @@ import psycopg
 from psycopg import OperationalError
 from publisher import publish_task
 
+from app import data_cleaning, scrape_support
 from applicant_insert import InsertEntriesOptions, build_insert_values, insert_entries
 from load_data import create_applicants_table as _create_applicants_table, parse_date, parse_float
 import query_data
@@ -216,14 +215,6 @@ def fetch_applicant_row_by_url(connection, url: str) -> dict[str, Any] | None:
     return dict(zip(keys, row))
 
 
-# Make module_2 importable when running the dashboard.
-def _ensure_module_2_on_path() -> str:
-    module_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    if module_root not in sys.path:
-        sys.path.insert(0, module_root)
-    return module_root
-
-
 # Get a set of URLs already in the DB so the program can skip duplicates.
 def _fetch_existing_urls(connection) -> set[str]:
     batch_size = query_data.clamp_query_limit(
@@ -273,20 +264,8 @@ def _extract_page_number(url: str) -> int:
 
 
 def _resolve_scrape_modules(scraper_module, clean_module):
-    """Resolve scrape/clean modules from args, module_2 shim, or package imports."""
-    if scraper_module is not None and clean_module is not None:
-        return scraper_module, clean_module
-
-    # Support both real package imports and tests that monkeypatch
-    # sys.modules["module_2"] with scrape/clean attributes.
-    module2 = sys.modules.get("module_2")
-    scrape = getattr(module2, "scrape", None) if module2 else None
-    clean = getattr(module2, "clean", None) if module2 else None
-    if scrape is None:
-        scrape = importlib.import_module("module_2.scrape")
-    if clean is None:
-        clean = importlib.import_module("module_2.clean")
-    return scraper_module or scrape, clean_module or clean
+    """Resolve scrape/clean helpers from args or the built-in module_6 defaults."""
+    return scraper_module or scrape_support, clean_module or data_cleaning
 
 
 def _load_existing_context(connection_factory):
@@ -432,7 +411,6 @@ def pull_gradcafe_data(
     connection_factory: Callable[..., Any] | None = None,
 ) -> dict[str, int]:
     """Scrape new GradCafe data, insert unseen rows, and return stats."""
-    _ensure_module_2_on_path()
     scraper_module, clean_module = _resolve_scrape_modules(scraper_module, clean_module)
     connection_factory = connection_factory or create_connection
     start_page = 1

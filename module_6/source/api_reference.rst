@@ -4,14 +4,14 @@ API Reference
 Scraping API
 ------------
 
-.. automodule:: module_2.scrape
+.. automodule:: app.scrape_support
    :members:
    :undoc-members:
 
 Cleaning API
 ------------
 
-.. automodule:: module_2.clean
+.. automodule:: app.data_cleaning
    :members:
    :undoc-members:
 
@@ -51,4 +51,3 @@ Route Summary
 - ``POST /pull-data``: starts pull job (foreground or background).
 - ``POST /update-analysis``: refresh trigger endpoint.
 - ``GET /pull-status``: pull status snapshot for polling.
-

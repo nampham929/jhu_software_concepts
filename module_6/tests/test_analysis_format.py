@@ -207,9 +207,9 @@ def test_query_data_get_queries_and_run_query_modes():
 
 
 @pytest.mark.analysis
-def test_module2_clean_load_clean_save(tmp_path):
-    # Verify module_2 clean pipeline loads, transforms, and saves sanitized JSON data.
-    import module_2.clean as clean_mod
+def test_data_cleaning_load_clean_save(tmp_path):
+    # Verify the module_6 clean pipeline loads, transforms, and saves sanitized JSON data.
+    from app import data_cleaning as clean_mod
 
     input_path = tmp_path / "in.json"
     output_path = tmp_path / "out.json"
@@ -228,9 +228,9 @@ def test_module2_clean_load_clean_save(tmp_path):
 
 
 @pytest.mark.analysis
-def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
+def test_scrape_support_helpers_without_network(monkeypatch, tmp_path):
     # Exercise scrape helpers with mocked network/robots to keep test fully offline.
-    import module_2.scrape as scrape_mod
+    from app import scrape_support as scrape_mod
 
     class FakeRP:
         def set_url(self, url):
@@ -245,6 +245,7 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
     monkeypatch.setattr(scrape_mod.urllib.robotparser, "RobotFileParser", FakeRP)
     allowed = scrape_mod._check_robots_allowed("https://x")
     assert "ALLOWED" in allowed
+    assert "ALLOWED" in scrape_mod.check_robots_allowed("https://x")
 
     class FakeResp:
         # Context-manager shape mirrors urllib response objects used by the scraper.
@@ -259,6 +260,8 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
 
     monkeypatch.setattr(scrape_mod, "urlopen", lambda req: FakeResp())
     assert scrape_mod._fetch_html("https://x") == "<html></html>"
+    monkeypatch.setattr(scrape_mod, "_fetch_html", lambda url: "wrapped")
+    assert scrape_mod.fetch_html("https://x") == "wrapped"
 
     # Simulate the paired-row structure seen in GradCafe tables.
     html = """
@@ -280,6 +283,8 @@ def test_module2_scrape_helpers_without_network(monkeypatch, tmp_path):
 
     # Empty markup should parse to an empty result set.
     assert scrape_mod._parse_page("<html></html>") == []
+    monkeypatch.setattr(scrape_mod, "_parse_page", lambda text: [{"wrapped": text}])
+    assert scrape_mod.parse_page("wrapped-html") == [{"wrapped": "wrapped-html"}]
 
     # Stub network/parser pieces to test scrape_data pagination behavior only.
     monkeypatch.setattr(scrape_mod, "_fetch_html", lambda url: "<html></html>")
@@ -310,9 +315,9 @@ def test_query_data_run_query_labels_branch():
 
 
 @pytest.mark.analysis
-def test_module2_scrape_disallowed_and_rejected_branches(monkeypatch):
+def test_scrape_support_disallowed_and_rejected_branches(monkeypatch):
     # Cover robots disallow handling and rejected-row parsing branch.
-    import module_2.scrape as scrape_mod
+    from app import scrape_support as scrape_mod
 
     class FakeRP:
         def set_url(self, url):
@@ -350,26 +355,17 @@ def test_module2_scrape_disallowed_and_rejected_branches(monkeypatch):
 
 
 @pytest.mark.analysis
-def test_module2_run_main_imported_as_package(monkeypatch):
-    # Validate module_2.run.main works when imported as a package with patched dependencies.
-    import importlib
-    import module_2.clean as clean_mod
-    import module_2.scrape as scrape_mod
-    import sys
+def test_pipeline_run_main(monkeypatch):
+    # Validate the legacy orchestration still works from its module_6-owned location.
+    from app import pipeline_run as run_mod
 
-    monkeypatch.setitem(sys.modules, "clean", clean_mod)
-    monkeypatch.setitem(sys.modules, "scrape", scrape_mod)
-
-    # Import after sys.modules patch so module_2.run resolves these names.
-    run_mod = importlib.import_module("module_2.run")
-
-    monkeypatch.setattr(run_mod.scrape, "_check_robots_allowed", lambda base: "ok")
+    monkeypatch.setattr(run_mod.scrape_support, "check_robots_allowed", lambda base: "ok")
     # Patch I/O-heavy routines so main() runs as a pure unit test.
-    monkeypatch.setattr(run_mod.scrape, "scrape_data", lambda pages: [{"a": 1}])
-    monkeypatch.setattr(run_mod.scrape, "save_data", lambda data, filename: None)
-    monkeypatch.setattr(run_mod.clean, "load_data", lambda filename: [{"a": 1}])
-    monkeypatch.setattr(run_mod.clean, "clean_data", lambda data: data)
-    monkeypatch.setattr(run_mod.clean, "save_data", lambda data, filename: None)
+    monkeypatch.setattr(run_mod.scrape_support, "scrape_data", lambda pages: [{"a": 1}])
+    monkeypatch.setattr(run_mod.scrape_support, "save_data", lambda data, filename: None)
+    monkeypatch.setattr(run_mod.data_cleaning, "load_data", lambda filename: [{"a": 1}])
+    monkeypatch.setattr(run_mod.data_cleaning, "clean_data", lambda data: data)
+    monkeypatch.setattr(run_mod.data_cleaning, "save_data", lambda data, filename: None)
 
     run_mod.main()
 

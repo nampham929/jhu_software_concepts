@@ -117,7 +117,7 @@ Current test command:
 ```
 
 Current status at last check:
-- `56 passed`
+- `53 passed`
 - `100.00% coverage`
 
 The test suite now targets the module_6 runtime paths (`src/web/app`, `src/db`) instead of only the legacy root `src/...` layout.

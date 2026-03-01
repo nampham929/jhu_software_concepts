@@ -119,22 +119,22 @@
         return;
       }
       const parts = [];
-      if (progress.pages_scraped) {
+      if (progress.pages_scraped !== undefined && progress.pages_scraped !== null) {
         parts.push(`Pages: ${progress.pages_scraped}`);
       }
-      if (progress.processed) {
+      if (progress.processed !== undefined && progress.processed !== null) {
         parts.push(`Processed: ${progress.processed}`);
       }
-      if (progress.inserted) {
+      if (progress.inserted !== undefined && progress.inserted !== null) {
         parts.push(`Inserted: ${progress.inserted}`);
       }
-      if (progress.duplicates) {
+      if (progress.duplicates !== undefined && progress.duplicates !== null) {
         parts.push(`Duplicates: ${progress.duplicates}`);
       }
-      if (progress.missing_urls) {
+      if (progress.missing_urls !== undefined && progress.missing_urls !== null) {
         parts.push(`Missing URLs: ${progress.missing_urls}`);
       }
-      if (progress.errors) {
+      if (progress.errors !== undefined && progress.errors !== null) {
         parts.push(`Errors: ${progress.errors}`);
       }
       pullStatusCounts.textContent = parts.join(' | ');

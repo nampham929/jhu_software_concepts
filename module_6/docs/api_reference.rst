@@ -6,7 +6,7 @@ Scraping API
 
 This API scrapes GradCafe survey pages and converts each page into structured applicant records for downstream cleaning and loading.
 
-.. automodule:: module_2.scrape
+.. automodule:: app.scrape_support
    :members:
    :undoc-members:
 
@@ -15,7 +15,7 @@ Cleaning API
 
 This API cleans scraped applicant records by normalizing text fields, removing noise, and standardizing values for storage.
 
-.. automodule:: module_2.clean
+.. automodule:: app.data_cleaning
    :members:
    :undoc-members:
 
