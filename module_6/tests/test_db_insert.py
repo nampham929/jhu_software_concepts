@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import blueprints.dashboard as dashboard
-from flask_app import create_app
+import app.blueprints.dashboard as dashboard
+from app.flask_app import create_app
 import load_data
 from load_data import create_applicants_table
 
@@ -57,12 +57,14 @@ def test_insert_on_pull_writes_required_schema_rows(
     mock_reset_applicants_table,
     fake_applicant_row,
     insert_row_tuple,
+    monkeypatch,
 ):
     # Ensure a pull inserts at least one row and populates all required schema columns.
     mock_reset_applicants_table()
 
-    # Use a deterministic in-test runner so /pull-data can be asserted end-to-end.
-    def fake_pull_runner(progress_callback=None):
+    # Simulate the worker side by handling the queued pull immediately in test.
+    def fake_publish_task(kind, payload=None):
+        assert kind == "scrape_new_data"
         conn = dashboard.create_connection(database_url=mock_db_url)
         try:
             create_applicants_table(conn)
@@ -80,25 +82,14 @@ def test_insert_on_pull_writes_required_schema_rows(
         finally:
             conn.close()
 
-        return {
-            "start_page": 1,
-            "end_page": 1,
-            "pages_scraped": 1,
-            "processed": 1,
-            "inserted": 1,
-            "duplicates": 0,
-            "missing_urls": 0,
-            "errors": 0,
-        }
-
     app = create_app(
         {
             "TESTING": True,
             "DATABASE_URL": mock_db_url,
-            "RUN_PULL_IN_BACKGROUND": False,
-            "PULL_RUNNER": fake_pull_runner,
         }
     )
+    monkeypatch.setattr(dashboard, "publish_task", fake_publish_task)
+    monkeypatch.setattr(dashboard, "_set_job_status", lambda *args, **kwargs: None)
 
     conn = dashboard.create_connection(database_url=mock_db_url)
     try:
@@ -110,7 +101,7 @@ def test_insert_on_pull_writes_required_schema_rows(
     with app.test_client() as client:
         response = client.post("/pull-data")
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert response.get_json()["ok"] is True
 
     conn = dashboard.create_connection(database_url=mock_db_url)
@@ -256,6 +247,19 @@ def test_create_applicants_table_success_and_error():
 
 
 @pytest.mark.db
+def test_create_ingestion_watermarks_table_success_and_error():
+    # Ensure watermark table creation commits on success and rolls back on failure.
+    good = _LoadConn()
+    load_data.create_ingestion_watermarks_table(good)
+    assert good.commit_count == 1
+
+    bad = _LoadConn(fail_execute=True)
+    with pytest.raises(RuntimeError):
+        load_data.create_ingestion_watermarks_table(bad)
+    assert bad.rollback_count == 1
+
+
+@pytest.mark.db
 def test_parse_helpers_and_detect_encoding(tmp_path):
     # Validate parsing helpers and BOM/encoding detection across common file encodings.
     assert load_data.parse_date("January 15, 2026") == "2026-01-15"
@@ -342,6 +346,7 @@ def test_load_data_main_success_and_failure(monkeypatch):
     # Isolate main() control flow by stubbing table creation and load operations.
     monkeypatch.setattr(load_data, "create_connection", lambda *args, **kwargs: conn)
     monkeypatch.setattr(load_data, "create_applicants_table", lambda c: None)
+    monkeypatch.setattr(load_data, "create_ingestion_watermarks_table", lambda c: None)
     monkeypatch.setattr(load_data, "load_data_from_jsonl", lambda c, p: None)
     load_data.main()
     assert conn.closed is True
@@ -736,6 +741,7 @@ def test_load_data_main_uses_database_url(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://db.example.invalid:5432/dbname")
     monkeypatch.setattr(load_data.psycopg, "connect", lambda url: conn)
     monkeypatch.setattr(load_data, "create_applicants_table", lambda c: None)
+    monkeypatch.setattr(load_data, "create_ingestion_watermarks_table", lambda c: None)
     monkeypatch.setattr(load_data, "load_data_from_jsonl", lambda c, p: None)
     load_data.main()
     assert conn.closed is True

@@ -1,0 +1,16 @@
+[MESSAGES CONTROL]
+disable=
+    duplicate-code,
+    mixed-line-endings,
+    too-many-branches,
+    too-many-locals,
+    too-many-statements
+
+[TYPECHECK]
+generated-members=
+    execute,
+    commit,
+    close,
+    fetchone,
+    fetchall,
+    rowcount

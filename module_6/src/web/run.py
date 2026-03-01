@@ -1,3 +1,5 @@
+"""Flask entrypoint for the module_6 web service."""
+
 from app.flask_app import create_app
 
 

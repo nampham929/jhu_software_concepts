@@ -3,17 +3,20 @@ from __future__ import annotations
 from bs4 import BeautifulSoup
 import pytest
 
-import blueprints.dashboard as dashboard
+import app.blueprints.dashboard as dashboard
 import query_data
-from flask_app import create_app
+from app.flask_app import create_app
 from load_data import create_applicants_table
 
 
-def _build_pull_runner(db_url: str, records: list[tuple]):
-    # Build a deterministic pull runner used by integration tests.
+def _build_pull_publisher(db_url: str, records: list[tuple]):
+    # Build a deterministic publish_task replacement used by integration tests.
 
-    def fake_pull_runner(progress_callback=None):
+    def fake_publish_task(kind: str, payload=None):
         # Use the app's DB helper so tests follow production connection wiring.
+        _ = payload
+        if kind != "scrape_new_data":
+            return
         conn = dashboard.create_connection(database_url=db_url)
         inserted = 0
         duplicates = 0
@@ -47,22 +50,12 @@ def _build_pull_runner(db_url: str, records: list[tuple]):
         finally:
             conn.close()
 
-        # Mirror dashboard progress callback contract used by /pull-data.
-        if progress_callback:
-            progress_callback(progress={"processed": len(records), "inserted": inserted})
+        dashboard._update_pull_status(
+            message="Pull Data completed.",
+            progress={"processed": len(records), "inserted": inserted, "duplicates": duplicates},
+        )
 
-        return {
-            "start_page": 1,
-            "end_page": 1,
-            "pages_scraped": 1,
-            "processed": len(records),
-            "inserted": inserted,
-            "duplicates": duplicates,
-            "missing_urls": 0,
-            "errors": 0,
-        }
-
-    return fake_pull_runner
+    return fake_publish_task
 
 
 def _analysis_results_from_db(db_url: str):
@@ -113,11 +106,13 @@ def test_end_to_end_pull_update_render(
         {
             "TESTING": True,
             "DATABASE_URL": mock_db_url,
-            "RUN_PULL_IN_BACKGROUND": False,
-            "PULL_RUNNER": _build_pull_runner(mock_db_url, fake_pull_records),
         }
     )
 
+    monkeypatch.setattr(
+        dashboard, "publish_task", _build_pull_publisher(mock_db_url, fake_pull_records)
+    )
+    monkeypatch.setattr(dashboard, "_set_job_status", lambda *args, **kwargs: None)
     monkeypatch.setattr(dashboard, "load_query_results", lambda: _analysis_results_from_db(mock_db_url))
 
     with app.test_client() as client:
@@ -126,9 +121,9 @@ def test_end_to_end_pull_update_render(
         update_resp = client.post("/update-analysis")
         page_resp = client.get("/analysis")
 
-    assert pull_resp.status_code == 200
+    assert pull_resp.status_code == 202
     assert pull_resp.get_json()["ok"] is True
-    assert update_resp.status_code == 200
+    assert update_resp.status_code == 202
     assert update_resp.get_json()["ok"] is True
     assert page_resp.status_code == 200
 
@@ -145,6 +140,7 @@ def test_multiple_pulls_with_overlapping_data_remain_consistent(
     mock_db_url,
     mock_reset_applicants_table,
     fake_pull_records,
+    monkeypatch,
 ):
     # Ensure repeated pulls with overlapping URLs do not create duplicate DB rows.
     mock_reset_applicants_table()
@@ -152,18 +148,19 @@ def test_multiple_pulls_with_overlapping_data_remain_consistent(
         {
             "TESTING": True,
             "DATABASE_URL": mock_db_url,
-            "RUN_PULL_IN_BACKGROUND": False,
-            "PULL_RUNNER": _build_pull_runner(mock_db_url, fake_pull_records),
         }
     )
+    publisher = _build_pull_publisher(mock_db_url, fake_pull_records)
+    monkeypatch.setattr(dashboard, "publish_task", publisher)
+    monkeypatch.setattr(dashboard, "_set_job_status", lambda *args, **kwargs: None)
 
     with app.test_client() as client:
         # Second pull uses the same records; duplicate filtering should keep row count stable.
         first = client.post("/pull-data")
         second = client.post("/pull-data")
 
-    assert first.status_code == 200
-    assert second.status_code == 200
+    assert first.status_code == 202
+    assert second.status_code == 202
 
     conn = dashboard.create_connection(database_url=mock_db_url)
     try:

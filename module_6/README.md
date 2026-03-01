@@ -117,19 +117,22 @@ Current test command:
 ```
 
 Current status at last check:
-- `52 passed`
+- `56 passed`
 - `100.00% coverage`
 
-Note: the copied test suite still primarily validates the legacy `src/...` module layout and should be migrated to the `src/web`, `src/worker`, and `src/db` runtime paths before final cleanup.
+The test suite now targets the module_6 runtime paths (`src/web/app`, `src/db`) instead of only the legacy root `src/...` layout.
 
 ## Lint
 Current lint command:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pylint src
+.\.venv\Scripts\python.exe -m pylint --recursive=y --fail-under=10 src/web src/worker src/db
 ```
 
-The module_6 migration introduced duplicated compatibility files, so a final lint cleanup pass is still required before submission.
+Current status at last check:
+- `10.00/10`
+
+Lint is scoped to the module_6 runtime implementation (`src/web`, `src/worker`, `src/db`).
 
 ## Build Images
 Compose builds:
@@ -152,10 +155,14 @@ docker push <dockerhub-user>/module_6:web-v1
 docker push <dockerhub-user>/module_6:worker-v1
 ```
 
-Registry links to fill in before submission:
-- Web image: `<add-your-dockerhub-link-here>`
-- Worker image: `<add-your-dockerhub-link-here>`
-- Repository: `<add-your-dockerhub-repo-link-here>`
+Registry links:
+- Web image: `https://hub.docker.com/r/nampham929/module_6`
+- Worker image: `https://hub.docker.com/r/nampham929/module_6`
+- Repository: `https://hub.docker.com/r/nampham929/module_6`
+
+Published tags:
+- `web-v1`
+- `worker-v1`
 
 ## Submission Checklist
 - `docker compose up --build` runs all four services

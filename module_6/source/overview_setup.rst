@@ -27,7 +27,7 @@ From ``module_4``:
 
 .. code-block:: bash
 
-   python src/flask_app.py
+   docker compose up --build
 
 Run Tests
 ---------
@@ -47,4 +47,5 @@ Run by marker:
    pytest -m analysis
    pytest -m db
    pytest -m integration
+
 

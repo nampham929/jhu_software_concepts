@@ -3,8 +3,8 @@ from __future__ import annotations
 from bs4 import BeautifulSoup
 import pytest
 
-import blueprints.dashboard as dashboard
-from flask_app import create_app
+import app.blueprints.dashboard as dashboard
+from app.flask_app import create_app
 
 
 @pytest.mark.web

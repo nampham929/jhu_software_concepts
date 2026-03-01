@@ -12,11 +12,11 @@ from typing import Any, Callable
 from flask import Blueprint, jsonify, render_template, request
 import psycopg
 from psycopg import OperationalError
+from publisher import publish_task
 
 from applicant_insert import InsertEntriesOptions, build_insert_values, insert_entries
 from load_data import create_applicants_table as _create_applicants_table, parse_date, parse_float
 import query_data
-from publisher import publish_task
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -512,7 +512,13 @@ def _ensure_job_status_table(connection) -> None:
     connection.commit()
 
 
-def _set_job_status(job_name: str, state: str, message: str, progress: dict[str, Any] | None = None) -> None:
+def _set_job_status(
+    job_name: str,
+    state: str,
+    message: str,
+    progress: dict[str, Any] | None = None,
+) -> None:
+    """Upsert one shared job status row in PostgreSQL."""
     connection = create_connection()
     try:
         _ensure_job_status_table(connection)
@@ -617,7 +623,7 @@ def pull_data():
             _default_progress(),
         )
         publish_task("scrape_new_data", payload={})
-    except Exception as exc:
+    except (RuntimeError, OSError, psycopg.Error, ValueError, TypeError) as exc:
         _set_job_status(
             PULL_TASK_NAME,
             "failed",
@@ -680,7 +686,9 @@ def update_analysis():
                 {
                     "ok": False,
                     "busy": True,
-                    "message": "Update Analysis is disabled while Pull Data is queued or running.",
+                    "message": (
+                        "Update Analysis is disabled while Pull Data is queued or running."
+                    ),
                 }
             ),
             409,
@@ -693,7 +701,7 @@ def update_analysis():
             _default_progress(),
         )
         publish_task("recompute_analytics", payload={})
-    except Exception as exc:
+    except (RuntimeError, OSError, psycopg.Error, ValueError, TypeError) as exc:
         _set_job_status(
             ANALYTICS_TASK_NAME,
             "failed",
@@ -711,7 +719,17 @@ def update_analysis():
             503,
         )
     _update_pull_status(message="Analysis refresh queued. Worker will process it shortly.")
-    return jsonify({"ok": True, "busy": False, "updated": True, "message": "Analysis update queued."}), 202
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "busy": False,
+                "updated": True,
+                "message": "Analysis update queued.",
+            }
+        ),
+        202,
+    )
 
 
 # Provide pull status updates for the polling UI.

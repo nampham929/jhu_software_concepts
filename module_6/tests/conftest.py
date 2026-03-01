@@ -10,13 +10,23 @@ from dotenv import load_dotenv
 from load_data import create_applicants_table
 
 
-SRC_PATH = Path(__file__).resolve().parents[1] / "src"
 ROOT_PATH = Path(__file__).resolve().parents[1]
-# Ensure tests can import application modules from `src/` without installing a package.
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
-if str(ROOT_PATH) not in sys.path:
-    sys.path.insert(0, str(ROOT_PATH))
+SRC_PATH = ROOT_PATH / "src"
+WEB_PATH = SRC_PATH / "web"
+WEB_APP_PATH = WEB_PATH / "app"
+DB_PATH = SRC_PATH / "db"
+
+
+def _prioritize_test_imports() -> None:
+    """Ensure tests import module_6 runtime modules before legacy copies."""
+    desired_order = [DB_PATH, WEB_APP_PATH, WEB_PATH, SRC_PATH, ROOT_PATH]
+    current_paths = [path for path in sys.path if path not in {str(item) for item in desired_order}]
+    for path in reversed(desired_order):
+        current_paths.insert(0, str(path))
+    sys.path[:] = current_paths
+
+
+_prioritize_test_imports()
 
 # Load optional test-only env file from repo root.
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.test")
@@ -193,7 +203,7 @@ def db_ready(db_url: str) -> None:
 
 @pytest.fixture(autouse=True)
 def reset_pull_state():
-    import blueprints.dashboard as dashboard
+    import app.blueprints.dashboard as dashboard
 
     # Prevent state leakage between tests that touch dashboard pull status.
     dashboard._set_pull_in_progress(False)
@@ -218,18 +228,20 @@ def block_db_in_non_db_tests(request, monkeypatch):
     if "db" in marker_names or "integration" in marker_names:
         return
 
-    import blueprints.dashboard as dashboard
+    import app.blueprints.dashboard as dashboard
     import load_data
     import query_data
 
     def _blocked_connection(*args, **kwargs):
-        raise AssertionError(
+        raise RuntimeError(
             "Non-DB test attempted a real database connection. "
             "Use monkeypatch/fakes or mark test with @pytest.mark.db."
         )
 
     # Patch all known DB entry points so accidental live connections fail fast.
     monkeypatch.setattr(dashboard, "create_connection", _blocked_connection)
+    monkeypatch.setattr(dashboard, "_set_job_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(dashboard, "publish_task", lambda *args, **kwargs: None)
     monkeypatch.setattr(dashboard.psycopg, "connect", _blocked_connection)
     monkeypatch.setattr(load_data.psycopg, "connect", _blocked_connection)
     monkeypatch.setattr(query_data.psycopg, "connect", _blocked_connection)
@@ -282,7 +294,7 @@ def insert_row_tuple():
 @pytest.fixture
 def reset_applicants_table(db_url: str):
     def _reset() -> None:
-        import blueprints.dashboard as dashboard
+        import app.blueprints.dashboard as dashboard
 
         # Recreate expected schema and clear data for deterministic DB tests.
         conn = dashboard.create_connection(database_url=db_url)
@@ -359,7 +371,7 @@ def mock_reset_applicants_table(mock_db_connection: MockConnection):
 @pytest.fixture
 def mock_create_connection(mock_db_connection: MockConnection, monkeypatch):
     """Fixture to mock the create_connection function."""
-    import blueprints.dashboard as dashboard
+    import app.blueprints.dashboard as dashboard
     import load_data
     
     def _mock_create_connection(database_url=None, **kwargs):

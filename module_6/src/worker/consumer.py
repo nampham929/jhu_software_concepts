@@ -166,7 +166,13 @@ def _default_progress() -> dict:
     }
 
 
-def _set_job_status(conn, job_name: str, state: str, message: str, progress: dict | None = None) -> None:
+def _set_job_status(
+    conn,
+    job_name: str,
+    state: str,
+    message: str,
+    progress: dict | None = None,
+) -> None:
     conn.execute(
         """
         INSERT INTO job_status (job_name, state, message, progress_json, updated_at)
@@ -326,7 +332,7 @@ def _on_message(ch, method, _properties, body):
             handler(conn, payload)
             conn.commit()
             ch.basic_ack(delivery_tag=method.delivery_tag)
-        except Exception:
+        except (RuntimeError, OSError, psycopg.Error, ValueError, TypeError):
             conn.rollback()
             if kind in {PULL_TASK_NAME, ANALYTICS_TASK_NAME}:
                 _ensure_schema(conn)
@@ -342,6 +348,7 @@ def _on_message(ch, method, _properties, body):
 
 
 def main():
+    """Start the long-running RabbitMQ consumer process."""
     with psycopg.connect(os.environ["DATABASE_URL"]) as db_conn:
         _seed_if_empty(db_conn)
 
