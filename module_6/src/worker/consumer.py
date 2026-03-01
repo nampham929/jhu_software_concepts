@@ -18,6 +18,8 @@ ROUTING_KEY = "tasks"
 WATERMARK_SOURCE = "gradcafe_survey"
 RABBITMQ_CONNECT_RETRIES = 30
 RABBITMQ_CONNECT_DELAY_SECONDS = 2
+PULL_TASK_NAME = "scrape_new_data"
+ANALYTICS_TASK_NAME = "recompute_analytics"
 
 INSERT_APPLICANT_SQL = """
     INSERT INTO applicants (
@@ -84,6 +86,17 @@ def _ensure_schema(conn) -> None:
         );
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS job_status (
+            job_name TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            message TEXT NOT NULL,
+            progress_json TEXT NOT NULL,
+            updated_at TIMESTAMPTZ DEFAULT now()
+        );
+        """
+    )
 
 
 def _build_row(entry: dict) -> tuple:
@@ -141,6 +154,34 @@ def _load_seed_rows(seed_path: str) -> list[dict]:
     return []
 
 
+def _default_progress() -> dict:
+    return {
+        "processed": 0,
+        "inserted": 0,
+        "duplicates": 0,
+        "missing_urls": 0,
+        "errors": 0,
+        "pages_scraped": 0,
+        "current_page": None,
+    }
+
+
+def _set_job_status(conn, job_name: str, state: str, message: str, progress: dict | None = None) -> None:
+    conn.execute(
+        """
+        INSERT INTO job_status (job_name, state, message, progress_json, updated_at)
+        VALUES (%s, %s, %s, %s, now())
+        ON CONFLICT (job_name)
+        DO UPDATE SET
+            state = EXCLUDED.state,
+            message = EXCLUDED.message,
+            progress_json = EXCLUDED.progress_json,
+            updated_at = now();
+        """,
+        (job_name, state, message, json.dumps(progress or _default_progress())),
+    )
+
+
 def _seed_if_empty(conn) -> None:
     _ensure_schema(conn)
     row = conn.execute("SELECT COUNT(*) FROM applicants;").fetchone()
@@ -195,11 +236,19 @@ def _scrape_until(last_seen: str | None, max_pages: int = 10) -> list[dict]:
 def handle_scrape_new_data(conn, payload):
     """Fetch incremental rows and insert idempotently using URL watermark."""
     _ensure_schema(conn)
+    _set_job_status(
+        conn,
+        PULL_TASK_NAME,
+        "running",
+        "Pull Data is running.",
+        _default_progress(),
+    )
     since_url = payload.get("since")
     last_seen = since_url or _get_last_seen(conn)
 
     batch = _scrape_until(last_seen)
     newest_url = None
+    inserted = 0
 
     for entry in batch:
         url = entry.get("url")
@@ -207,15 +256,39 @@ def handle_scrape_new_data(conn, payload):
             continue
         if newest_url is None:
             newest_url = url
-        conn.execute(INSERT_APPLICANT_SQL, _build_row(entry))
+        cursor = conn.execute(INSERT_APPLICANT_SQL, _build_row(entry))
+        inserted += max(cursor.rowcount, 0)
 
     if newest_url:
         _set_last_seen(conn, newest_url)
+    _set_job_status(
+        conn,
+        PULL_TASK_NAME,
+        "completed",
+        "Pull Data completed.",
+        {
+            "processed": len(batch),
+            "inserted": inserted,
+            "duplicates": max(len(batch) - inserted, 0),
+            "missing_urls": 0,
+            "errors": 0,
+            "pages_scraped": 0,
+            "current_page": None,
+        },
+    )
 
 
 def handle_recompute_analytics(conn, payload):
     """Recompute analytics artifacts used by the web UI."""
     _ = payload
+    _ensure_schema(conn)
+    _set_job_status(
+        conn,
+        ANALYTICS_TASK_NAME,
+        "running",
+        "Analysis refresh is running.",
+        _default_progress(),
+    )
     conn.execute(
         """
         CREATE MATERIALIZED VIEW IF NOT EXISTS applicant_status_summary AS
@@ -225,6 +298,13 @@ def handle_recompute_analytics(conn, payload):
         """
     )
     conn.execute("REFRESH MATERIALIZED VIEW applicant_status_summary;")
+    _set_job_status(
+        conn,
+        ANALYTICS_TASK_NAME,
+        "completed",
+        "Analysis refresh completed.",
+        _default_progress(),
+    )
 
 
 def _on_message(ch, method, _properties, body):
@@ -248,6 +328,16 @@ def _on_message(ch, method, _properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception:
             conn.rollback()
+            if kind in {PULL_TASK_NAME, ANALYTICS_TASK_NAME}:
+                _ensure_schema(conn)
+                _set_job_status(
+                    conn,
+                    kind,
+                    "failed",
+                    f"{kind} failed.",
+                    {"errors": 1},
+                )
+                conn.commit()
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 

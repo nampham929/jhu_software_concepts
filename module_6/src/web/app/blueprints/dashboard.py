@@ -20,11 +20,25 @@ from publisher import publish_task
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
+PULL_TASK_NAME = "scrape_new_data"
+ANALYTICS_TASK_NAME = "recompute_analytics"
 
 
 def create_applicants_table(connection):  # pragma: no cover
     """Backward-compatible proxy to load_data table setup helper."""
     return _create_applicants_table(connection)
+
+
+def _default_progress() -> dict[str, Any]:
+    return {
+        "processed": 0,
+        "inserted": 0,
+        "duplicates": 0,
+        "missing_urls": 0,
+        "errors": 0,
+        "pages_scraped": 0,
+        "current_page": None,
+    }
 
 # Shared runtime configuration; populated by flask_app.create_app(...).
 APP_SETTINGS: dict[str, Any] = {
@@ -38,15 +52,7 @@ pull_state_lock = threading.Lock()
 pull_status_state = {
     "running": False,
     "message": "Idle",
-    "progress": {
-        "processed": 0,
-        "inserted": 0,
-        "duplicates": 0,
-        "missing_urls": 0,
-        "errors": 0,
-        "pages_scraped": 0,
-        "current_page": None,
-    },
+    "progress": _default_progress(),
 }
 
 # Default database settings used by the dashboard and pull job.
@@ -491,8 +497,82 @@ def _update_pull_status(message: str | None = None, progress: dict[str, Any] | N
             pull_status_state["progress"].update(progress)
 
 
+def _ensure_job_status_table(connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS job_status (
+            job_name TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            message TEXT NOT NULL,
+            progress_json TEXT NOT NULL,
+            updated_at TIMESTAMPTZ DEFAULT now()
+        );
+        """
+    )
+    connection.commit()
+
+
+def _set_job_status(job_name: str, state: str, message: str, progress: dict[str, Any] | None = None) -> None:
+    connection = create_connection()
+    try:
+        _ensure_job_status_table(connection)
+        connection.execute(
+            """
+            INSERT INTO job_status (job_name, state, message, progress_json, updated_at)
+            VALUES (%s, %s, %s, %s, now())
+            ON CONFLICT (job_name)
+            DO UPDATE SET
+                state = EXCLUDED.state,
+                message = EXCLUDED.message,
+                progress_json = EXCLUDED.progress_json,
+                updated_at = now();
+            """,
+            (job_name, state, message, json.dumps(progress or _default_progress())),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _get_shared_pull_status() -> dict[str, Any] | None:
+    try:
+        connection = create_connection()
+    except RuntimeError:
+        return None
+
+    try:
+        _ensure_job_status_table(connection)
+        row = connection.execute(
+            """
+            SELECT state, message, progress_json
+            FROM job_status
+            WHERE job_name = %s;
+            """,
+            (PULL_TASK_NAME,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+    if not row:
+        return None
+
+    state, message, progress_json = row
+    try:
+        progress = json.loads(progress_json)
+    except (TypeError, ValueError):
+        progress = _default_progress()
+    return {
+        "running": state in {"queued", "running"},
+        "message": message,
+        "progress": progress,
+    }
+
+
 # Return a safe snapshot of current pull status for the UI.
 def _get_pull_status_snapshot() -> dict[str, Any]:
+    shared_status = _get_shared_pull_status()
+    if shared_status is not None:
+        return shared_status
     with pull_state_lock:
         return {
             "running": pull_status_state["running"],
@@ -512,8 +592,8 @@ def dashboard():
     """Render the analysis dashboard view."""
     pull_status_value = request.args.get("pull_status")
     pull_message = request.args.get("pull_message")
-    is_pull_running = _get_pull_in_progress()
     pull_state = _get_pull_status_snapshot()
+    is_pull_running = bool(pull_state["running"])
     results = load_query_results()
     return render_template(
         "dashboard.html",
@@ -530,8 +610,20 @@ def dashboard():
 def pull_data():
     """Queue a scrape task for the worker and return immediately."""
     try:
+        _set_job_status(
+            PULL_TASK_NAME,
+            "queued",
+            "Pull request queued. Worker will process it shortly.",
+            _default_progress(),
+        )
         publish_task("scrape_new_data", payload={})
     except Exception as exc:
+        _set_job_status(
+            PULL_TASK_NAME,
+            "failed",
+            f"Unable to queue pull task: {exc}",
+            _default_progress(),
+        )
         return (
             jsonify(
                 {
@@ -544,15 +636,7 @@ def pull_data():
         )
     _update_pull_status(
         message="Pull request queued. Worker will process it shortly.",
-        progress={
-            "processed": 0,
-            "inserted": 0,
-            "duplicates": 0,
-            "missing_urls": 0,
-            "errors": 0,
-            "pages_scraped": 0,
-            "current_page": None,
-        },
+        progress=_default_progress(),
     )
     return jsonify({"ok": True, "busy": False, "message": "Pull request queued."}), 202
 
@@ -589,9 +673,33 @@ def _run_pull_job(pull_runner: Callable[..., dict[str, int]] | None = None) -> N
 @dashboard_bp.route("/update-analysis", methods=["POST"])
 def update_analysis():
     """Queue an analytics recompute task for the worker and return immediately."""
+    pull_state = _get_pull_status_snapshot()
+    if pull_state["running"]:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "busy": True,
+                    "message": "Update Analysis is disabled while Pull Data is queued or running.",
+                }
+            ),
+            409,
+        )
     try:
+        _set_job_status(
+            ANALYTICS_TASK_NAME,
+            "queued",
+            "Analysis refresh queued. Worker will process it shortly.",
+            _default_progress(),
+        )
         publish_task("recompute_analytics", payload={})
     except Exception as exc:
+        _set_job_status(
+            ANALYTICS_TASK_NAME,
+            "failed",
+            f"Unable to queue analytics task: {exc}",
+            _default_progress(),
+        )
         return (
             jsonify(
                 {

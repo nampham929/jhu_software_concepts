@@ -1,84 +1,170 @@
-# Nam Pham - JHED ID: npham21
+# Module 6
 
-## Module Info
-Module 5: Software Assurance and Secure SQL  
-Due Date: February 23, 2026
+## Overview
+This module converts the GradCafe analytics project into a containerized microservice stack.
 
-## Approach
-This assignment is to practice with software assurance workflows: input validation, static analysis, dependency analysis, virtual environments, supply-chain scanning, and least-privilege database configuration.
+Services:
+- `web`: Flask app on port `8080`
+- `worker`: RabbitMQ consumer for background tasks
+- `db`: PostgreSQL 16
+- `rabbitmq`: RabbitMQ management image
 
-## Pylint
-I ran Pylint on the `src` directory only and fixed all reported issues.  
-Final Pylint output: `Your code has been rated at 10.00/10` with no remaining warnings or errors.
+Background tasks:
+- `scrape_new_data`
+- `recompute_analytics`
 
-### How to run Pylint
-- Inside `module_5` folder, in the terminal, run:
-  - `.\.venv\Scripts\python.exe -m pylint src`
+The web service publishes tasks to RabbitMQ. The worker consumes them, updates PostgreSQL, and writes shared job status so the UI can show queued/running/completed state.
 
-## SQL Injection Defenses
-- Refactored SQL execution so user-controlled values are passed as bound parameters (no f-strings, `+` concatenation, or `.format()` to build raw SQL from input).
-- Used psycopg SQL composition (`sql.SQL`, `sql.Identifier`, `sql.Placeholder`) for dynamic query parts in `src/query_data.py`.
-- Enforced inherent query limits and a max cap using clamped LIMIT values (1-100), including paginated URL fetches in `src/blueprints/dashboard.py`.
+## Project Structure
+```text
+module_6/
+  docker-compose.yml
+  setup.py
+  README.md
+  docs/
+  tests/
+  src/
+    web/
+      Dockerfile
+      requirements.txt
+      run.py
+      publisher.py
+      app/
+    worker/
+      Dockerfile
+      requirements.txt
+      consumer.py
+      etl/
+    db/
+      load_data.py
+    data/
+      llm_extend_applicant_data.json
+```
 
-## Database Hardening (Least Privilege)
-- Database credentials are read from environment variables (`DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) instead of hard-coded values.
-- `.env.example` includes placeholder DB variable names for setup, and `.env` remains ignored in `.gitignore` so secrets are not committed.
-- Least-privilege SQL scripts are included in `sql/least_privilege_setup.sql` and `sql/verify_least_privilege.sql` to configure and verify a non-superuser runtime role with only required permissions.
+## Ports
+- Web UI: `http://localhost:8080`
+- RabbitMQ UI: `http://localhost:15672`
+- PostgreSQL: `localhost:5432`
+- RabbitMQ AMQP: `localhost:5672`
 
-## Python Dependency Graph (pydeps + Graphviz)
-- Installed `pydeps` in the project environment and verified Graphviz `dot` is available on the system path.
-- Generated the dependency graph as an SVG file using pydeps and saved the output as `dependency.svg` in `module_5/`.
+RabbitMQ default dev login:
+- username: `guest`
+- password: `guest`
 
-### How to run pydeps
-- Inside `module_5` folder, in the terminal, run:
-  - `pydeps src/flask_app.py --noshow -T svg -o dependency.svg --max-bacon 2 --include-missing`
+## Environment
+The local `.env` used for Docker Compose should contain:
 
-## Reproducible Environment + Packaging
-- Updated `requirements.txt` so a new environment can install everything required to run the Flask app and analysis features.
-- Included development tooling in `requirements.txt`, including `pylint` and `pydeps`, so linting and dependency graph generation are reproducible.
-- Added `setup.py` in `module_5/` with package metadata, `src`-based package discovery, Python version requirement, and install dependencies to support packaging and editable installs (`pip install -e .`).
+```env
+DATABASE_URL=postgresql://app_user:app_password@db:5432/applicants
+```
 
-## Fresh Install
+Inside Docker, the database host must be `db`, not `localhost`.
 
-### Method 1 (pip)
-1. `python -m venv .venv`
-2. `.\.venv\Scripts\Activate.ps1`
-3. `python -m pip install --upgrade pip`
-4. `python -m pip install -r requirements.txt`
+## Run With Docker Compose
+From the `module_6` root:
 
-### Method 2 (uv)
-1. `uv venv .venv`
-2. `.\.venv\Scripts\Activate.ps1`
-3. `uv pip install -r requirements.txt`
+```powershell
+docker compose down
+docker compose up --build
+```
 
-Note: `uv pip sync` is best used with a fully pinned lock file (including transitive dependencies). For this project's `requirements.txt`, use `uv pip install -r requirements.txt`.
+If you want a fresh database reseed from `src/data/llm_extend_applicant_data.json`:
 
-## Snyk Analysis
-As I ran `snyk test` on `module_5`, it found 2 vulnerabilities:
-- Flask 3.1.2 has a security issue where sensitive data might unintentionally be cached. Even though the severity is low, this could potentially expose sensitive information if caching is misconfigured.
-- Werkzeug 3.1.5 has security issues: improper request handling, header parsing issues, debugger exposure issues, cache/response handling edge cases, and path normalization or routing edge cases.
+```powershell
+docker compose down -v
+docker compose up --build
+```
 
-I patched these issues by using Flask 3.1.3 and Werkzeug 3.1.6. These new versions corrected the issues.
+## What Happens At Startup
+- `db` starts PostgreSQL
+- `rabbitmq` starts the broker and management UI
+- `worker` seeds the database from `src/data/llm_extend_applicant_data.json` if the `applicants` table is empty
+- `web` serves the dashboard on port `8080`
 
-### How to run Snyk test
-- Inside `module_5` folder, in the terminal, run:
-  - `snyk test`
+## Task Flow
+1. User clicks `Pull Data` or `Update Analysis`
+2. `web` publishes a durable message to the `tasks` exchange
+3. RabbitMQ routes the message to `tasks_q`
+4. `worker` consumes from `tasks_q` with `prefetch=1`
+5. `worker` updates PostgreSQL in a transaction
+6. `worker` updates shared job status in PostgreSQL
+7. UI polls `/pull-status` and updates the status panel/button state
 
-## GitHub Actions CI
-- Workflow file: `.github/workflows/ci.yml`
-- Runs on every push and pull request.
-- Enforces Pylint with `--fail-under=10` on `src`.
-- Generates `dependency.svg` with `pydeps` + Graphviz and fails if the file is missing.
-- Runs `snyk test` in CI (outputs scan results; token-based in GitHub Secrets).
-- Runs `pytest` with the PostgreSQL service setup used by this project.
+## Seed Data
+Seed file used by the worker:
 
-## Read the Docs
-- Published docs URL: `https://jhu-software-concepts-nampham.readthedocs.io/en/latest/`
+- [`src/data/llm_extend_applicant_data.json`](c:/Users/namph/jhu_software_concepts/module_6/src/data/llm_extend_applicant_data.json)
 
-## GitHub Repository
-The SSH URL to my GitHub repository:  
-`git@github.com:nampham929/jhu_software_concepts.git`
+This file is mounted read-only into the worker container as `/data/llm_extend_applicant_data.json`.
 
-## Known Bugs
+## Local Non-Docker Run
+Docker Compose is the intended run path.
 
-## Citations
+If you run `src/web/run.py` directly in a local venv, `DATABASE_URL` must use `localhost`, for example:
+
+```powershell
+$env:DATABASE_URL="postgresql://app_user:app_password@localhost:5432/applicants"
+python src\web\run.py
+```
+
+Do not use `@db` when running directly on Windows outside Docker.
+
+## Tests
+Current test command:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Current status at last check:
+- `52 passed`
+- `100.00% coverage`
+
+Note: the copied test suite still primarily validates the legacy `src/...` module layout and should be migrated to the `src/web`, `src/worker`, and `src/db` runtime paths before final cleanup.
+
+## Lint
+Current lint command:
+
+```powershell
+.\.venv\Scripts\python.exe -m pylint src
+```
+
+The module_6 migration introduced duplicated compatibility files, so a final lint cleanup pass is still required before submission.
+
+## Build Images
+Compose builds:
+- `module_6-web`
+- `module_6-worker`
+
+Manual build examples:
+
+```powershell
+docker build -t <dockerhub-user>/module_6:web-v1 .\src\web
+docker build -t <dockerhub-user>/module_6:worker-v1 .\src\worker
+```
+
+## Push Images To Docker Hub
+Example commands:
+
+```powershell
+docker login
+docker push <dockerhub-user>/module_6:web-v1
+docker push <dockerhub-user>/module_6:worker-v1
+```
+
+Registry links to fill in before submission:
+- Web image: `<add-your-dockerhub-link-here>`
+- Worker image: `<add-your-dockerhub-link-here>`
+- Repository: `<add-your-dockerhub-repo-link-here>`
+
+## Submission Checklist
+- `docker compose up --build` runs all four services
+- Web dashboard loads on `localhost:8080`
+- RabbitMQ UI loads on `localhost:15672`
+- `Pull Data` queues and is consumed
+- `Update Analysis` queues and is consumed
+- Screenshots captured for web and RabbitMQ
+- Docker Hub images pushed and links added
+- README updated with final registry links
+- CI paths updated to module_6
+- Final pylint and pytest pass confirmed
